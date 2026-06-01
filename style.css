@@ -1,0 +1,338 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+#canvas-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+#controls {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 13px;
+  width: 310px;
+}
+
+.controls-header {
+  flex-shrink: 0;
+  padding: 14px 18px 10px;
+}
+
+.controls-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 18px 18px;
+}
+
+/* ── MODE SWITCHER ─────────────────────────────────────────── */
+.mode-switcher {
+  display: flex;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+
+.mode-btn {
+  flex: 1;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  border: none;
+  border-radius: 0;
+  padding: 7px 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.mode-btn.active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* ── LINE / MESH CONTROL BLOCKS ────────────────────────────── */
+#lineControls,
+#meshControls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── SECTION HEADERS ───────────────────────────────────────── */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.55;
+  margin-top: 4px;
+  padding: 6px 0 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+
+.section-header:hover {
+  opacity: 0.9;
+}
+
+.section-header .chevron {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+/* ── SECTION BODIES ────────────────────────────────────────── */
+.section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── LFO ROWS ──────────────────────────────────────────────── */
+.lfo-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 8px;
+}
+
+.lfo-params {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+/* ── LFO ACTIVE INDICATOR ──────────────────────────────────── */
+@keyframes lfo-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.lfo-active::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  background: #7cf;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+  animation: lfo-pulse 1.2s ease-in-out infinite;
+}
+
+/* ── PRESETS ROW ───────────────────────────────────────────── */
+.presets-row {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.preset-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.preset-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+#randomizeBtn {
+  margin-left: auto;
+}
+
+/* ── SLIDERS ───────────────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+
+#controls input[type="range"] {
+  width: 100%;
+}
+
+#controls .lfo-params input[type="range"] {
+  width: 90px;
+  flex-shrink: 0;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+/* ── TYPOGRAPHY ────────────────────────────────────────────── */
+.big-four-label {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* ── BIG FOUR SLIDERS ──────────────────────────────────────── */
+.big-four-slider {
+  height: 7px !important;
+  background: rgba(255, 255, 255, 0.35) !important;
+  border-radius: 4px !important;
+}
+
+.big-four-slider::-webkit-slider-thumb {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.big-four-slider::-moz-range-thumb {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+/* ── BIG FOUR BLOCK (visual grouping) ──────────────────────── */
+.big-four-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  margin-bottom: 2px;
+}
+
+/* ── BUTTONS ───────────────────────────────────────────────── */
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+button {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ── SELECT ────────────────────────────────────────────────── */
+select {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 2px 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+/* ── IMAGE PREVIEW ─────────────────────────────────────────── */
+#imageUpload {
+  cursor: pointer;
+}
+
+#imgPreview {
+  display: none;
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  opacity: 0.8;
+}
+
+/* ── RESIZE HANDLE ─────────────────────────────────────────── */
+#resize-handle {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  left: 310px;
+  z-index: 10001;
+  cursor: ew-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+#resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 0.15s, height 0.15s;
+}
+
+#resize-handle:hover,
+#resize-handle.dragging {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+#resize-handle:hover::after,
+#resize-handle.dragging::after {
+  background: rgba(255, 255, 255, 0.55);
+  height: 48px;
+}
+
+/* ── COLOR FILTER OVERLAY ──────────────────────────────────── */
+#color-filter {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>p5 Playground</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  </head>
+  <body>
+    <div id="controls">
+
+      <!-- FIXED HEADER: mode switcher never scrolls away -->
+      <div class="controls-header">
+        <div class="mode-switcher">
+          <button class="mode-btn active" data-mode="line">Line</button>
+          <button class="mode-btn" data-mode="mesh">Mesh</button>
+        </div>
+      </div>
+
+      <!-- SCROLLABLE BODY -->
+      <div class="controls-body">
+
+      <!-- EXPORT -->
+      <div class="action-row">
+        <button id="savePngBtn">Save PNG</button>
+        <button id="saveSvgBtn">Save SVG</button>
+        <label><input id="transparentBg" type="checkbox" /> Transparent BG</label>
+        <button id="outputWindowBtn">&#9654; Present</button>
+      </div>
+
+      <!-- PRESETS -->
+      <div class="action-row presets-row">
+        <button class="preset-btn" data-preset="classic">Lissa</button>
+        <button class="preset-btn" data-preset="spiro">Spiro</button>
+        <button class="preset-btn" data-preset="rose">Rose</button>
+        <button id="randomizeBtn">&#9860; Random</button>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="action-row">
+        <button id="saveSettingsBtn">Save settings</button>
+        <button id="loadSettingsBtn">Load settings</button>
+        <small style="opacity:0.55">&#8679; Shift: fine &nbsp;·&nbsp; H: hide</small>
+      </div>
+
+      <!-- SHARED: Tempo / Sat / Brightness / Contrast (both modes) -->
+      <div class="big-four-block">
+        <label class="big-four-label" id="label-speed" for="tempoSlider">Tempo: <span id="tempoValue">0.005</span></label>
+        <input id="tempoSlider" class="big-four-slider" type="range" min="0" max="0.05" step="0.001" value="0.005" />
+        <div class="lfo-row">
+          <label><input id="speedLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="speedLfoRateValue">0.50</span></span>
+            <input id="speedLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="speedLfoDepthValue">0.50</span></span>
+            <input id="speedLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+
+        <label class="big-four-label" for="saturationSlider">Saturation: <span id="saturationValue">1.00</span></label>
+        <input id="saturationSlider" class="big-four-slider" type="range" min="0" max="1" step="0.01" value="1" />
+
+        <label class="big-four-label" for="brightnessSlider">Brightness: <span id="brightnessValue">1.00</span></label>
+        <input id="brightnessSlider" class="big-four-slider" type="range" min="0" max="2" step="0.01" value="1" />
+
+        <label class="big-four-label" for="contrastSlider">Contrast: <span id="contrastValue">1.00</span></label>
+        <input id="contrastSlider" class="big-four-slider" type="range" min="0" max="3" step="0.01" value="1" />
+      </div>
+
+      <!-- SHARED: Shape section (freqX/Y, ampX/Y — used by both line and mesh) -->
+      <div class="section-header" data-target="sec-shape">
+        <span>Shape</span><span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body" id="sec-shape">
+        <label id="label-freqX" for="freqXSlider">X freq (a): <span id="freqXValue">1.00</span></label>
+        <input id="freqXSlider" type="range" min="1" max="8" step="0.01" value="1" />
+        <div class="lfo-row">
+          <label><input id="freqXLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="freqXLfoRateValue">0.50</span></span>
+            <input id="freqXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="freqXLfoDepthValue">0.50</span></span>
+            <input id="freqXLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+
+        <label id="label-freqY" for="freqYSlider">Y freq (b): <span id="freqYValue">1.00</span></label>
+        <input id="freqYSlider" type="range" min="1" max="8" step="0.01" value="1" />
+        <div class="lfo-row">
+          <label><input id="freqYLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="freqYLfoRateValue">0.50</span></span>
+            <input id="freqYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="freqYLfoDepthValue">0.50</span></span>
+            <input id="freqYLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+
+        <label id="label-ampX" for="ampXSlider">X amplitude: <span id="ampXValue">0.40</span></label>
+        <input id="ampXSlider" type="range" min="0.05" max="0.9" step="0.01" value="0.4" />
+        <div class="lfo-row">
+          <label><input id="ampXLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="ampXLfoRateValue">0.50</span></span>
+            <input id="ampXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="ampXLfoDepthValue">0.50</span></span>
+            <input id="ampXLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+
+        <label id="label-ampY" for="ampYSlider">Y amplitude: <span id="ampYValue">0.40</span></label>
+        <input id="ampYSlider" type="range" min="0.05" max="0.9" step="0.01" value="0.4" />
+        <div class="lfo-row">
+          <label><input id="ampYLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="ampYLfoRateValue">0.50</span></span>
+            <input id="ampYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="ampYLfoDepthValue">0.50</span></span>
+            <input id="ampYLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+      </div>
+
+      <!-- SHARED: Modulation (used by both line and mesh) -->
+      <div class="section-header" data-target="sec-mod">
+        <span>Modulation</span><span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body" id="sec-mod">
+        <label id="label-modFreqX" for="modFreqXSlider">X mod: <span id="modFreqXValue">1.00</span></label>
+        <input id="modFreqXSlider" type="range" min="1" max="8" step="0.01" value="1" />
+        <div class="lfo-row">
+          <label><input id="modFreqXLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="modFreqXLfoRateValue">0.50</span></span>
+            <input id="modFreqXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="modFreqXLfoDepthValue">0.50</span></span>
+            <input id="modFreqXLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+
+        <label id="label-modFreqY" for="modFreqYSlider">Y mod: <span id="modFreqYValue">1.00</span></label>
+        <input id="modFreqYSlider" type="range" min="1" max="8" step="0.01" value="1" />
+        <div class="lfo-row">
+          <label><input id="modFreqYLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="modFreqYLfoRateValue">0.50</span></span>
+            <input id="modFreqYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="modFreqYLfoDepthValue">0.50</span></span>
+            <input id="modFreqYLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== LINE CONTROLS ==================== -->
+      <div id="lineControls">
+
+        <!-- Curve type -->
+        <div class="section-header" data-target="sec-curve">
+          <span>Curve type</span><span class="chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="sec-curve">
+          <label for="curveShape">Shape:</label>
+          <select id="curveShape">
+            <option value="lissajous">Lissajous</option>
+            <option value="rose">Rose (rhodonea)</option>
+            <option value="spirograph">Spirograph</option>
+          </select>
+        </div>
+
+        <!-- Motion -->
+        <div class="section-header" data-target="sec-motion">
+          <span>Motion</span><span class="chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="sec-motion">
+          <label id="label-phase" for="phaseSlider">Phase (δ): <span id="phaseValue">0.00</span></label>
+          <input id="phaseSlider" type="range" min="0" max="6.28" step="0.01" value="0" />
+          <div class="lfo-row">
+            <label><input id="phaseLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-params">
+              <span>Rate: <span id="phaseLfoRateValue">0.50</span></span>
+              <input id="phaseLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="phaseLfoDepthValue">0.50</span></span>
+              <input id="phaseLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
+
+          <label id="label-stepSize" for="stepSizeSlider">Step size: <span id="stepSizeValue">0.010</span></label>
+          <input id="stepSizeSlider" type="range" min="0.001" max="0.2" step="0.001" value="0.01" />
+          <div class="lfo-row">
+            <label><input id="stepSizeLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-params">
+              <span>Rate: <span id="stepSizeLfoRateValue">0.50</span></span>
+              <input id="stepSizeLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="stepSizeLfoDepthValue">0.50</span></span>
+              <input id="stepSizeLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Rendering -->
+        <div class="section-header" data-target="sec-rendering">
+          <span>Rendering</span><span class="chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="sec-rendering">
+          <label id="label-strokeWeight" for="strokeWeightSlider">Stroke weight: <span id="strokeWeightValue">1.0</span></label>
+          <input id="strokeWeightSlider" type="range" min="0.5" max="10" step="0.1" value="1" />
+          <div class="lfo-row">
+            <label><input id="strokeWeightLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-params">
+              <span>Rate: <span id="strokeWeightLfoRateValue">0.50</span></span>
+              <input id="strokeWeightLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="strokeWeightLfoDepthValue">0.50</span></span>
+              <input id="strokeWeightLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
+
+          <label id="label-trail" for="trailSlider">Trail: <span id="trailValue">20</span></label>
+          <input id="trailSlider" type="range" min="1" max="255" step="1" value="20" />
+          <div class="lfo-row">
+            <label><input id="trailLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-params">
+              <span>Rate: <span id="trailLfoRateValue">0.50</span></span>
+              <input id="trailLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="trailLfoDepthValue">0.50</span></span>
+              <input id="trailLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end #lineControls -->
+
+      <!-- ==================== MESH CONTROLS ==================== -->
+      <div id="meshControls" style="display:none">
+
+        <div class="section-header" data-target="sec-mesh">
+          <span>Mesh</span><span class="chevron">&#9660;</span>
+        </div>
+        <div class="section-body" id="sec-mesh">
+          <label for="pointCountSlider">Point count: <span id="pointCountValue">400</span></label>
+          <input id="pointCountSlider" type="range" min="100" max="2000" step="10" value="400" />
+
+          <label for="connectionRadiusSlider">Connection radius: <span id="connectionRadiusValue">100</span></label>
+          <input id="connectionRadiusSlider" type="range" min="10" max="300" step="1" value="100" />
+
+          <label for="connectionRampSlider">Connection ramp: <span id="connectionRampValue">6.0</span></label>
+          <input id="connectionRampSlider" type="range" min="1" max="12" step="0.1" value="6" />
+
+        </div>
+
+      </div><!-- end #meshControls -->
+
+      <!-- ==================== SHARED SECTIONS ==================== -->
+
+      <!-- Color -->
+      <div class="section-header" data-target="sec-color">
+        <span>Color</span><span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body" id="sec-color">
+        <button id="randomColorsBtn">&#9860; Random colors</button>
+        <label id="label-lineColor" for="lineColor">Line color:</label>
+        <input id="lineColor" type="color" value="#171717" />
+        <div class="lfo-row">
+          <label><input id="lineColorLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="lineColorLfoRateValue">0.50</span></span>
+            <input id="lineColorLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="lineColorLfoDepthValue">0.50</span></span>
+            <input id="lineColorLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+
+        <label id="label-bgColor" for="bgColor">Background color:</label>
+        <input id="bgColor" type="color" value="#ededed" />
+        <div class="lfo-row">
+          <label><input id="bgColorLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-params">
+            <span>Rate: <span id="bgColorLfoRateValue">0.50</span></span>
+            <input id="bgColorLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+            <span>Depth: <span id="bgColorLfoDepthValue">0.50</span></span>
+            <input id="bgColorLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Glow (collapsed) -->
+      <div class="section-header collapsed" data-target="sec-glow">
+        <span>Glow</span><span class="chevron">&#9658;</span>
+      </div>
+      <div class="section-body" id="sec-glow" style="display:none">
+        <label><input id="glowEnabled" type="checkbox" /> Enable glow</label>
+        <label for="glowSizeSlider">Size: <span id="glowSizeValue">20</span></label>
+        <input id="glowSizeSlider" type="range" min="1" max="80" step="1" value="20" />
+        <label for="glowIntensitySlider">Intensity: <span id="glowIntensityValue">0.80</span></label>
+        <input id="glowIntensitySlider" type="range" min="0.05" max="1" step="0.01" value="0.8" />
+      </div>
+
+      <!-- Color Filter (collapsed) -->
+      <div class="section-header collapsed" data-target="sec-filter">
+        <span>Color Filter</span><span class="chevron">&#9658;</span>
+      </div>
+      <div class="section-body" id="sec-filter" style="display:none">
+        <label><input id="filterEnabled" type="checkbox" /> Enable filter</label>
+        <label for="filterColor">Color:</label>
+        <input id="filterColor" type="color" value="#ff0000" />
+        <label for="filterOpacity">Opacity: <span id="filterOpacityValue">0.30</span></label>
+        <input id="filterOpacity" type="range" min="0" max="1" step="0.01" value="0.3" />
+        <label for="filterBlendMode">Blend mode:</label>
+        <select id="filterBlendMode">
+          <option value="normal">Normal</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+          <option value="darken">Darken</option>
+          <option value="lighten">Lighten</option>
+          <option value="color-dodge">Color Dodge</option>
+          <option value="color-burn">Color Burn</option>
+          <option value="hard-light">Hard Light</option>
+          <option value="soft-light">Soft Light</option>
+          <option value="difference">Difference</option>
+          <option value="exclusion">Exclusion</option>
+          <option value="hue">Hue</option>
+          <option value="saturation">Saturation</option>
+          <option value="color">Color</option>
+          <option value="luminosity">Luminosity</option>
+        </select>
+      </div>
+
+      <!-- Image (collapsed) -->
+      <div class="section-header collapsed" data-target="sec-image">
+        <span>Image</span><span class="chevron">&#9658;</span>
+      </div>
+      <div class="section-body" id="sec-image" style="display:none">
+        <label for="imageUpload">Upload:</label>
+        <input id="imageUpload" type="file" accept="image/*,video/*" />
+        <img id="imgPreview" />
+        <div class="action-row">
+          <button id="hidePhotoBtn" disabled>Hide photo</button>
+          <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+        <label><input id="showCurve" type="checkbox" /> Hide curve</label>
+        <label for="imgScaleSlider">Scale: <span id="imgScaleValue">1.00</span></label>
+        <input id="imgScaleSlider" type="range" min="0.1" max="8" step="0.01" value="1" />
+        <label for="imgOffsetXSlider">Offset X: <span id="imgOffsetXValue">0.00</span></label>
+        <input id="imgOffsetXSlider" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
+        <label for="imgOffsetYSlider">Offset Y: <span id="imgOffsetYValue">0.00</span></label>
+        <input id="imgOffsetYSlider" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
+        <label for="imgDrawMode">Style:</label>
+        <select id="imgDrawMode">
+          <option value="0">Off</option>
+          <option value="1">Lines — weight by darkness</option>
+          <option value="2">Dots — size by darkness</option>
+          <option value="3">Lines — length by darkness</option>
+          <option value="4">Lines — rotation by brightness</option>
+          <option value="5">Colored dots</option>
+          <option value="6">Relief — neighbour displacement</option>
+          <option value="7">Colored rotated tiles</option>
+          <option value="8">Pixel quads — hue by mouse</option>
+          <option value="9" selected>Rects + ellipses — rotation by brightness</option>
+        </select>
+        <label for="imgColsSlider">Resolution: <span id="imgColsValue">80</span></label>
+        <input id="imgColsSlider" type="range" min="20" max="200" step="1" value="80" />
+        <label for="imageStrengthSlider">Opacity: <span id="imageStrengthValue">1.00</span></label>
+        <input id="imageStrengthSlider" type="range" min="0" max="1" step="0.01" value="1" />
+      </div>
+
+      </div><!-- end .controls-body -->
+    </div>
+
+    <div id="resize-handle"></div>
+    <div id="canvas-container"></div>
+    <div id="color-filter"></div>
+    <script src="sketch.js"></script>
+  </body>
+</html>
