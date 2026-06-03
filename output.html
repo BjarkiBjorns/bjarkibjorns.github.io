@@ -5,60 +5,78 @@
   <style>
     * { margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-    canvas { display: block; width: 100%; height: 100%; }
-    #fs-hint {
+    canvas { display: block; position: fixed; inset: 0; }
+    #cf {
+      display: none;
       position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: rgba(255,255,255,0.35);
-      font: 13px/1 system-ui, sans-serif;
+      inset: 0;
       pointer-events: none;
-      transition: opacity 1s;
     }
   </style>
 </head>
 <body>
   <canvas id="out"></canvas>
-  <div id="fs-hint">Click to go fullscreen</div>
+  <div id="cf"></div>
   <script>
-    var canvas  = document.getElementById('out');
-    var ctx     = canvas.getContext('2d');
-    var hint    = document.getElementById('fs-hint');
-    var channel = null;
+    var canvas = document.getElementById('out');
+    var ctx    = canvas.getContext('2d');
+    var cf     = document.getElementById('cf');
 
-    try { channel = new BroadcastChannel('lissa-output'); } catch (e) {}
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // Receive pixel-perfect frames from the main window.
+    // Uses postMessage + ImageBitmap transfer instead of window.opener DOM access —
+    // file:// pages have null origins so cross-window DOM access is cross-origin blocked,
+    // but postMessage('*') works regardless of origin.
+    var pendingBmp = null;
+
+    window.addEventListener('message', function(e) {
+      var d = e.data;
+      if (!d || d.type !== 'frame' || !d.bmp) return;
+      if (pendingBmp) pendingBmp.close(); // drop stale frame if main outruns display
+      pendingBmp = d.bmp;
+    });
+
+    function raf() {
+      if (pendingBmp) {
+        ctx.drawImage(pendingBmp, 0, 0, canvas.width, canvas.height);
+        pendingBmp.close();
+        pendingBmp = null;
+      }
+      requestAnimationFrame(raf);
+    }
+    requestAnimationFrame(raf);
+
+    // BroadcastChannel: CSS filter, color overlay, close command, heartbeat
+    var channel = null;
+    try { channel = new BroadcastChannel('lissa-output'); } catch(e) {}
 
     if (channel) {
-      channel.addEventListener('message', function (e) {
+      channel.addEventListener('message', function(e) {
         var d = e.data;
-        if (d.type === 'frame') {
-          canvas.width  = d.width;
-          canvas.height = d.height;
-          ctx.drawImage(d.bitmap, 0, 0);
-          d.bitmap.close();
-        } else if (d.type === 'close') {
-          window.close();
+        if (!d) return;
+        if (d.type === 'close') { window.close(); return; }
+        if (d.type === 'meta') {
+          canvas.style.filter = d.filter || '';
+          if (d.cf) {
+            cf.style.display      = 'block';
+            cf.style.background   = 'rgba('+d.cf.r+','+d.cf.g+','+d.cf.b+','+d.cf.o+')';
+            cf.style.mixBlendMode = d.cf.m || 'normal';
+          } else {
+            cf.style.display = 'none';
+          }
         }
       });
 
-      // Announce presence repeatedly so the main page reconnects after a refresh
-      function heartbeat() {
-        channel.postMessage({ type: 'ready' });
-      }
+      function heartbeat() { channel.postMessage({ type: 'ready' }); }
       heartbeat();
       setInterval(heartbeat, 2000);
     }
-
-    // Click anywhere to request fullscreen (hides the URL / title bar)
-    document.addEventListener('click', function () {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(function () {});
-        hint.style.opacity = '0';
-      }
-    });
-
-    setTimeout(function () { hint.style.opacity = '0'; }, 5000);
   </script>
 </body>
 </html>

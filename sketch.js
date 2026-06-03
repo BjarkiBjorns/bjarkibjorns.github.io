@@ -7,8 +7,8 @@ let params = {
   modFreqX:     1,    modFreqY:     1,
   phase:        0,    speed:        0.005,
   ampX:         0.4,  ampY:         0.4,
-  stepSize:     0.01, strokeWeight: 1,
-  trail:        20,
+  stepSize:     0.001, strokeWeight: 0.5,
+  trail:        100,
   pointCount:       400,
   connectionRadius: 100,
   connectionRamp:   6
@@ -26,7 +26,18 @@ let showCurve     = true;
 let meshDirty     = true;
 let meshAnimating = false;
 let meshAnimSpeed = 0.005;
-let meshPhase     = 0;
+
+// Text blend mode
+let textMode = {
+  text:   "LISSA",
+  font:   "Arial Black",
+  size:   200,
+  bold:   true,
+  italic: false,
+  blend:  0
+};
+let _textMaskCanvas = null;
+let _textMaskCtx    = null;
 
 // Image / video data
 let uploadedImg    = null;
@@ -56,13 +67,15 @@ let contrastLevel = 1.0;
 
 // Phase accumulator for smooth tempo changes
 let phaseAccumulator = 0;
+let _fr = 60; // frameRate cached once per draw() to avoid repeated calls
 
 // Presentation window
-let outputWindow    = null;
+let outputWindows   = [];   // all currently open output windows (max 3)
 let outputChannel   = null;
 let outputConnected = false;
-let mirrorPending   = false;
+let mirrorPending   = false; // kept for compatibility, unused after state-based mirror
 let _heartbeatTimer = null;
+let _secondScreen   = null;
 
 // Glow
 let glowEnabled   = false;
@@ -91,7 +104,11 @@ let lfos = {
   strokeWeight: { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
   trail:        { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
   bgColor:      { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
-  lineColor:    { enabled: false, rate: 0.5, depth: 0.5, phase: 0 }
+  lineColor:    { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  textSize:         { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  textBlend:        { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  connectionRadius: { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  connectionRamp:   { enabled: false, rate: 0.5, depth: 0.5, phase: 0 }
 };
 
 let paramRanges;
@@ -101,14 +118,15 @@ const SLIDER_DEFAULTS = {
   modFreqXSlider: 1,  modFreqYSlider: 1,
   phaseSlider: 0,     tempoSlider: 0.005,
   ampXSlider: 0.4,    ampYSlider: 0.4,
-  stepSizeSlider: 0.01, strokeWeightSlider: 1,
-  trailSlider: 20,
+  stepSizeSlider: 0.001, strokeWeightSlider: 0.5,
+  trailSlider: 100,
   pointCountSlider: 400, connectionRadiusSlider: 100, connectionRampSlider: 6,
   saturationSlider: 1, brightnessSlider: 1, contrastSlider: 1,
   glowSizeSlider: 20,  glowIntensitySlider: 0.8,
   filterOpacity: 0.3,
   imgScaleSlider: 1,  imgOffsetXSlider: 0, imgOffsetYSlider: 0,
-  imgColsSlider: 80,  imageStrengthSlider: 1
+  imgColsSlider: 80,  imageStrengthSlider: 1,
+  textSizeSlider: 200, textBlendSlider: 0
 };
 
 const PRESETS = {
@@ -121,7 +139,7 @@ const PRESETS = {
   },
   spiro: {
     params: { freqX: 5, freqY: 4, modFreqX: 3, modFreqY: 2, phase: 0,
-              speed: 0.003, ampX: 0.42, ampY: 0.42, stepSize: 0.007, strokeWeight: 0.8, trail: 12 },
+              speed: 0.003, ampX: 0.42, ampY: 0.42, stepSize: 0.007, strokeWeight: 0.8, trail: 25 },
     curveShape: 'spirograph',
     lineColor: { r: 30,  g: 30,  b: 120 },
     bgColor:   { r: 235, g: 235, b: 255 }
@@ -178,25 +196,46 @@ function applyPreset(name) {
   pushHistory();
 }
 
-function openOutputWindow() {
-  if (outputWindow && !outputWindow.closed) {
-    outputWindow.focus();
-    return;
+async function openOutputWindow() {
+  // Drop any closed windows from the list, then enforce the 3-window cap
+  outputWindows = outputWindows.filter(function(w) { return !w.closed; });
+  if (outputWindows.length >= 3) return;
+
+  // window.open() MUST be called synchronously while the browser's user gesture
+  // (transient activation from the button click) is still alive. Calling it after
+  // any `await` causes the activation to expire and the browser silently ignores
+  // the left/top positioning hints, always opening on the primary screen.
+  // Strategy: open immediately with whatever screen info is already cached, then
+  // call moveTo() afterwards (moveTo doesn't need a gesture).
+  let scr = _secondScreen;
+  let feats = [
+    'width='  + (scr ? scr.availWidth  : screen.availWidth),
+    'height=' + (scr ? scr.availHeight : screen.availHeight),
+    'toolbar=no', 'location=no', 'menubar=no', 'scrollbars=no', 'resizable=yes'
+  ];
+  if (scr) feats.push('left=' + scr.availLeft, 'top=' + scr.availTop);
+
+  // Each window gets a unique name so window.open never reuses an existing one
+  let win = window.open('output.html', 'lissa-output-' + Date.now(), feats.join(','));
+  if (!win) return;
+  outputWindows.push(win);
+
+  // Now it's safe to await — screen detection may show a one-time permission dialog
+  if (!_secondScreen && 'getScreenDetails' in window) {
+    try {
+      let sd = await window.getScreenDetails();
+      _secondScreen = sd.screens.find(function(s) { return !s.isPrimary; }) || null;
+      sd.addEventListener('screenschange', function() {
+        _secondScreen = sd.screens.find(function(s) { return !s.isPrimary; }) || null;
+      });
+    } catch(e) {}
   }
-  let features = [
-    'width='  + screen.availWidth,
-    'height=' + screen.availHeight,
-    'toolbar=no', 'location=no', 'menubar=no',
-    'scrollbars=no', 'resizable=yes'
-  ].join(',');
-  outputWindow = window.open('output.html', 'lissa-output', features);
-  outputWindow.addEventListener('beforeunload', function() {
-    outputWindow    = null;
-    outputConnected = false;
-    clearTimeout(_heartbeatTimer);
-    let b = document.getElementById('outputWindowBtn');
-    if (b) b.textContent = '▶ Present';
-  });
+
+  // Move the already-open window to the second screen (moveTo needs no gesture)
+  if (_secondScreen && !win.closed) {
+    win.moveTo(_secondScreen.availLeft, _secondScreen.availTop);
+    win.resizeTo(_secondScreen.availWidth, _secondScreen.availHeight);
+  }
 }
 
 function randomizeColors() {
@@ -218,7 +257,7 @@ function randomizeColors() {
 }
 
 function randomizeParams() {
-  let shapes = ['lissajous', 'ellipse', 'rose', 'spirograph'];
+  let shapes = ['lissajous', 'rose', 'spirograph'];
   curveShape       = shapes[Math.floor(Math.random() * shapes.length)];
   params.freqX     = Math.round(Math.random() * 6 + 1);
   params.freqY     = Math.round(Math.random() * 6 + 1);
@@ -227,6 +266,13 @@ function randomizeParams() {
   params.phase     = Math.random() * Math.PI * 2;
   params.ampX      = 0.2 + Math.random() * 0.3;
   params.ampY      = 0.2 + Math.random() * 0.3;
+  // X freq and X mod LFOs always on after randomize
+  lfos.freqX.enabled  = true;
+  lfos.freqX.rate     = 0.030;
+  lfos.freqX.depth    = 0.25;
+  lfos.modFreqX.enabled = true;
+  lfos.modFreqX.rate    = 0.030;
+  lfos.modFreqX.depth   = 0.25;
   restoreState(captureState());
   pushHistory();
 }
@@ -273,6 +319,7 @@ function captureState() {
     lineColor:       Object.assign({}, lineColor),
     drawMode,
     curveShape,
+    showCurve,
     meshAnimating,
     meshAnimSpeed,
     imgDrawMode,
@@ -293,7 +340,8 @@ function captureState() {
     brightness,
     contrastLevel,
     showImage,
-    transparentBg
+    transparentBg,
+    textMode: Object.assign({}, textMode)
   };
 }
 
@@ -362,6 +410,8 @@ function restoreState(snap) {
   applyCanvasFilter();
 
   // Checkboxes + mode visibility
+  showCurve = snap.showCurve ?? true;
+  _setChk("showCurve", !showCurve);
   setDrawMode(drawMode);
 
   // Colors
@@ -374,7 +424,8 @@ function restoreState(snap) {
 
   // LFOs
   ["freqX","freqY","modFreqX","modFreqY","phase","speed",
-   "ampX","ampY","stepSize","strokeWeight","trail","bgColor","lineColor"].forEach(key => {
+   "ampX","ampY","stepSize","strokeWeight","trail","bgColor","lineColor",
+   "textSize","textBlend","connectionRadius","connectionRamp"].forEach(key => {
     let lfo = lfos[key];
     _setChk(key+"LfoToggle", lfo.enabled);
     _setEl(key+"LfoRate",  Math.log10(lfo.rate));  _setTxt(key+"LfoRateValue",  lfo.rate.toFixed(3));
@@ -413,6 +464,34 @@ function restoreState(snap) {
   _setTxt("filterOpacityValue", colorFilter.opacity.toFixed(2));
   _setEl("filterBlendMode",  colorFilter.blendMode);
   applyColorFilter();
+
+  // Text blend
+  if (snap.textMode) {
+    Object.assign(textMode, snap.textMode);
+    _setEl('textInput',        textMode.text);
+    _setEl('textFont',         textMode.font);
+    _setChk('textBold',        textMode.bold);
+    _setChk('textItalic',      textMode.italic);
+    _setEl('textSizeSlider',  textMode.size);  _setTxt('textSizeValue',  textMode.size);
+    _setEl('textBlendSlider', textMode.blend); _setTxt('textBlendValue', textMode.blend.toFixed(2));
+  }
+
+  // Sync color swatches and curve chips that don't auto-update via _setEl
+  [['lineColor','lineColorSwatch'],['bgColor','bgColorSwatch'],['filterColor','filterColorSwatch']].forEach(function(pair) {
+    var inp = document.getElementById(pair[0]);
+    var sw  = document.getElementById(pair[1]);
+    if (inp && sw) sw.style.background = inp.value;
+  });
+  document.querySelectorAll('#curveShapeChips .chip').forEach(function(chip) {
+    chip.classList.toggle('active', chip.dataset.value === curveShape);
+  });
+  // Sync pill --pct fill positions after any programmatic slider value change
+  document.querySelectorAll('.slider-pill').forEach(function(pill) {
+    var s = pill.querySelector('input[type="range"]');
+    if (!s) return;
+    var pct = (Number(s.value) - Number(s.min)) / (Number(s.max) - Number(s.min)) * 100;
+    pill.style.setProperty('--pct', pct.toFixed(2) + '%');
+  });
 
   meshDirty = true;
 }
@@ -470,18 +549,27 @@ function bindLfo(key) {
 function applyLfo(key) {
   let lfo=lfos[key], range=paramRanges[key];
   if(!lfo.enabled) return params[key];
-  let fr = frameRate() || 60;
-  lfo.phase+=(TWO_PI*lfo.rate)/fr;
+  lfo.phase+=(TWO_PI*lfo.rate)/_fr;
   return constrain(params[key]+sin(lfo.phase)*lfo.depth*(range.max-range.min)/2, range.min, range.max);
 }
 
 function applyColorLfo(key, baseColor) {
   let lfo=lfos[key];
   if(!lfo.enabled) return baseColor;
-  let fr = frameRate() || 60;
-  lfo.phase+=(TWO_PI*lfo.rate)/fr;
+  lfo.phase+=(TWO_PI*lfo.rate)/_fr;
   let hsl=rgbToHsl(baseColor.r,baseColor.g,baseColor.b);
   return hslToRgb(hsl.h+sin(lfo.phase)*lfo.depth*180, max(hsl.s,0.8), max(hsl.l,0.5));
+}
+
+const _textLfoRanges = { textSize: { min:20, max:600 }, textBlend: { min:0, max:1 } };
+
+function applyTextLfo(key) {
+  let lfo   = lfos[key];
+  let range = _textLfoRanges[key];
+  let base  = key === 'textSize' ? textMode.size : textMode.blend;
+  if (!lfo || !lfo.enabled) return base;
+  lfo.phase += (TWO_PI * lfo.rate) / _fr;
+  return constrain(base + sin(lfo.phase) * lfo.depth * (range.max - range.min) / 2, range.min, range.max);
 }
 
 // =============================================================================
@@ -496,12 +584,8 @@ function applyImgTransform(nx, ny) {
   ];
 }
 
-function rawBrightness(nx, ny) {
-  if (!imgPixels) return 0.5;
-  let px = floor(constrain(nx,0,0.9999)*(imgW));
-  let py = floor(constrain(ny,0,0.9999)*(imgH));
-  let idx = (py*imgW+px)*4;
-  return luminance(imgPixels[idx], imgPixels[idx+1], imgPixels[idx+2]);
+function _pixelGrey(i) {
+  return round(imgPixels[i]*0.299 + imgPixels[i+1]*0.587 + imgPixels[i+2]*0.114);
 }
 
 
@@ -519,7 +603,7 @@ function _pixelGridCell(gx, gy, cols, rows, tileW, tileH, col, alpha, factor1, f
   let px  = floor(constrain(tnx, 0, 0.9999) * imgW);
   let py  = floor(constrain(tny, 0, 0.9999) * imgH);
   let idx = (py * imgW + px) * 4;
-  let grey = round(imgPixels[idx] * 0.222 + imgPixels[idx+1] * 0.707 + imgPixels[idx+2] * 0.071);
+  let grey = _pixelGrey(idx);
 
   stroke(col.r, col.g, col.b, alpha);
   noFill();
@@ -557,7 +641,7 @@ function _pixelGridCell(gx, gy, cols, rows, tileW, tileH, col, alpha, factor1, f
     let px2  = floor(constrain(tnx2, 0, 0.9999) * imgW);
     let py2  = floor(constrain(tny2, 0, 0.9999) * imgH);
     let idx2 = (py2 * imgW + px2) * 4;
-    let g2   = round(imgPixels[idx2] * 0.222 + imgPixels[idx2+1] * 0.707 + imgPixels[idx2+2] * 0.071);
+    let g2   = _pixelGrey(idx2);
     stroke(imgPixels[idx2], imgPixels[idx2+1], imgPixels[idx2+2], alpha);
     strokeWeight(map(grey, 0, 255, tileH * factor2, 0.2) + 0.1);
     let h = tileH * 2 * factor1;
@@ -641,10 +725,97 @@ function drawImageGrid(col, alpha, phaseAcc) {
 }
 
 // =============================================================================
+// TEXT COMPOSITING
+// =============================================================================
+
+// Render textMode text into a 2D context, centered on the main canvas.
+function _textToCtx(ctx2d, fillColor, sizeOverride) {
+  let txt = (textMode.text || '').trim();
+  if (!txt) return false;
+  let sz = sizeOverride !== undefined ? sizeOverride : textMode.size;
+  let parts = [];
+  if (textMode.italic) parts.push('italic');
+  if (textMode.bold)   parts.push('bold');
+  parts.push(Math.max(1, Math.round(sz)) + 'px');
+  parts.push('"' + textMode.font + '"');
+  ctx2d.font         = parts.join(' ');
+  ctx2d.fillStyle    = fillColor;
+  ctx2d.textAlign    = 'center';
+  ctx2d.textBaseline = 'middle';
+  ctx2d.fillText(txt, width / 2, height / 2);
+  return true;
+}
+
+// Ensure the off-screen mask canvas matches current canvas size.
+function _ensureTextCanvas() {
+  if (!_textMaskCanvas || _textMaskCanvas.width !== width || _textMaskCanvas.height !== height) {
+    _textMaskCanvas = document.createElement('canvas');
+    _textMaskCanvas.width  = width;
+    _textMaskCanvas.height = height;
+    _textMaskCtx = _textMaskCanvas.getContext('2d');
+  }
+}
+
+// Draw the curve path to a native 2D ctx (used before masking).
+function _curvePath2D(ctx2d, pts, cx, cy, col, sw) {
+  ctx2d.clearRect(0, 0, width, height);
+  ctx2d.save();
+  ctx2d.strokeStyle = `rgb(${col.r},${col.g},${col.b})`;
+  ctx2d.lineWidth   = sw;
+  ctx2d.lineCap     = 'round';
+  ctx2d.lineJoin    = 'round';
+  ctx2d.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    let x = cx + pts[i].x, y = cy + pts[i].y;
+    if (i === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+  }
+  if (pts.length > 0) ctx2d.closePath();
+  ctx2d.stroke();
+  ctx2d.restore();
+}
+
+// Draw mesh lines to a native 2D ctx.
+function _meshPath2D(ctx2d, pts, cx, cy, col, connRadius, connRamp) {
+  ctx2d.clearRect(0, 0, width, height);
+  ctx2d.save();
+  ctx2d.lineWidth = 0.5;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = 0; j < i; j++) {
+      let dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+      let d  = Math.sqrt(dx*dx + dy*dy);
+      if (d <= connRadius) {
+        let a = Math.pow(1 / (d / connRadius + 1), connRamp);
+        ctx2d.strokeStyle = `rgba(${col.r},${col.g},${col.b},${a})`;
+        ctx2d.beginPath();
+        ctx2d.moveTo(cx + pts[i].x, cy + pts[i].y);
+        ctx2d.lineTo(cx + pts[j].x, cy + pts[j].y);
+        ctx2d.stroke();
+      }
+    }
+  }
+  ctx2d.restore();
+}
+
+// Clip whatever is on _textMaskCanvas to the text shape, then composite
+// the result onto the main canvas at the given opacity.
+function _compositeTextMasked(opacity, sizeOverride) {
+  let ctx2d = _textMaskCtx;
+  ctx2d.save();
+  ctx2d.globalCompositeOperation = 'destination-in';
+  _textToCtx(ctx2d, '#fff', sizeOverride);
+  ctx2d.restore();
+  drawingContext.save();
+  drawingContext.globalAlpha = opacity;
+  drawingContext.drawImage(_textMaskCanvas, 0, 0);
+  drawingContext.restore();
+}
+
+// =============================================================================
 
 function calcPoints(freqX, freqY, modFreqX, modFreqY, phase, ampX, ampY, count) {
   let pts = [];
-  let rx  = min(width,height)*ampX, ry = min(width,height)*ampY;
+  let minDim = min(width,height);
+  let rx  = minDim*ampX, ry = minDim*ampY;
 
   if (curveShape === "rose") {
     // freqX = n (petal frequency); odd n → n petals, even n → 2n petals
@@ -687,8 +858,15 @@ function calcPoints(freqX, freqY, modFreqX, modFreqY, phase, ampX, ampY, count) 
 // MESH
 // =============================================================================
 
-function drawMesh(pts, connRadius, connRamp, col, bg) {
-  if (transparentBg) clear(); else background(bg.r,bg.g,bg.b);
+function drawMesh(pts, connRadius, connRamp, col, bg, trail) {
+  if (transparentBg) {
+    drawingContext.globalCompositeOperation = 'destination-out';
+    drawingContext.fillStyle = `rgba(0,0,0,${trail/255})`;
+    drawingContext.fillRect(0, 0, width, height);
+    drawingContext.globalCompositeOperation = 'source-over';
+  } else {
+    background(bg.r, bg.g, bg.b, trail);
+  }
   push(); translate(width/2,height/2);
   strokeWeight(0.5); noFill();
   for(let i=0;i<pts.length;i++){
@@ -702,6 +880,16 @@ function drawMesh(pts, connRadius, connRamp, col, bg) {
     }
   }
   pop();
+}
+
+function _downloadBlob(blob, filename) {
+  let url = URL.createObjectURL(blob);
+  let a   = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function makeTimestamp() {
@@ -766,24 +954,14 @@ ${defs}
 ${els.join('\n')}
 </svg>`;
 
-  let url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  let a   = document.createElement('a');
-  a.href = url; a.download = 'lissajous_' + makeTimestamp() + '.svg';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  _downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'lissajous_' + makeTimestamp() + '.svg');
 }
 
 function saveSettings() {
-  let filename = 'lissajous_settings_' + makeTimestamp() + '.json';
-  let url = URL.createObjectURL(new Blob([JSON.stringify(captureState(), null, 2)], { type: 'application/json' }));
-  let a   = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  _downloadBlob(
+    new Blob([JSON.stringify(captureState(), null, 2)], { type: 'application/json' }),
+    'lissajous_settings_' + makeTimestamp() + '.json'
+  );
 }
 
 function loadSettings() {
@@ -1021,7 +1199,8 @@ function setup() {
   // LFOs
   ["freqX","freqY","modFreqX","modFreqY","phase","speed",
    "ampX","ampY","stepSize","strokeWeight","trail",
-   "bgColor","lineColor"].forEach(bindLfo);
+   "bgColor","lineColor","textSize","textBlend",
+   "connectionRadius","connectionRamp"].forEach(bindLfo);
 
   // Glow
   document.getElementById("glowEnabled").addEventListener("change", function(){
@@ -1069,26 +1248,25 @@ function setup() {
       savePNG();
     }
     if (e.key === "h" || e.key === "H") {
-      let el = document.getElementById("controls");
-      el.style.display = el.style.display === "none" ? "" : "none";
+      document.getElementById("panel-toggle").click();
     }
   });
 
   // Section collapse
-  document.querySelectorAll('.section-header').forEach(function(header) {
+  document.querySelectorAll('.section-header[data-target]').forEach(function(header) {
     header.addEventListener('click', function() {
-      let body = document.getElementById(this.dataset.target);
+      var body = document.getElementById(this.dataset.target);
       if (!body) return;
-      let open = body.style.display !== 'none';
-      body.style.display = open ? 'none' : 'flex';
-      this.classList.toggle('collapsed', open);
-      let chevron = this.querySelector('.chevron');
-      if (chevron) chevron.innerHTML = open ? '&#9658;' : '&#9660;';
+      var closing = !body.classList.contains('collapsed');
+      body.classList.toggle('collapsed', closing);
+      this.classList.toggle('collapsed', closing);
+      var chevron = this.querySelector('.chevron');
+      if (chevron) chevron.innerHTML = closing ? '&#9658;' : '&#9660;';
     });
   });
 
   // Double-click to reset slider to default
-  document.querySelectorAll('#controls input[type="range"]').forEach(function(slider) {
+  document.querySelectorAll('#panel input[type="range"]').forEach(function(slider) {
     slider.addEventListener('dblclick', function() {
       let def = SLIDER_DEFAULTS[this.id];
       if (def === undefined) return;
@@ -1098,24 +1276,12 @@ function setup() {
     });
   });
 
-  // Presets + randomize
-  document.querySelectorAll('.preset-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() { applyPreset(this.dataset.preset); });
+  // Randomize
+  document.getElementById('randomizeBtn').addEventListener('click', function() {
+    randomizeColors();
+    randomizeParams();
   });
-  document.getElementById('randomizeBtn').addEventListener('click', randomizeParams);
-  document.getElementById('randomColorsBtn').addEventListener('click', randomizeColors);
-  document.getElementById('outputWindowBtn').addEventListener('click', function() {
-    if (outputConnected) {
-      if (outputChannel) outputChannel.postMessage({ type: 'close' });
-      outputConnected = false;
-      clearTimeout(_heartbeatTimer);
-      if (outputWindow && !outputWindow.closed) outputWindow.close();
-      outputWindow = null;
-      this.textContent = '▶ Present';
-    } else {
-      openOutputWindow();
-    }
-  });
+  document.getElementById('outputWindowBtn').addEventListener('click', openOutputWindow);
 
   // Extend LFO rate sliders to the slow end
   document.querySelectorAll('[id$="LfoRate"]').forEach(function(s) {
@@ -1123,7 +1289,7 @@ function setup() {
   });
 
   // Shift+drag on any slider = 10× precision scrubbing
-  document.querySelectorAll('#controls input[type="range"]').forEach(function(slider) {
+  document.querySelectorAll('#panel input[type="range"]').forEach(function(slider) {
     slider.addEventListener("mousedown", function(e) {
       if (!e.shiftKey) return;
       e.preventDefault();
@@ -1146,46 +1312,19 @@ function setup() {
     });
   });
 
-  // Resizable panel
-  (function() {
-    var handle   = document.getElementById('resize-handle');
-    var panel    = document.getElementById('controls');
-    var minW = 220, maxW = 560;
-    handle.style.left = panel.offsetWidth + 'px';
-    handle.addEventListener('mousedown', function(e) {
-      e.preventDefault();
-      handle.classList.add('dragging');
-      function onMove(mv) {
-        var w = Math.max(minW, Math.min(maxW, mv.clientX));
-        panel.style.width = w + 'px';
-        handle.style.left = w + 'px';
-      }
-      function onUp() {
-        handle.classList.remove('dragging');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup',  onUp);
-      }
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup',   onUp);
-    });
-  })();
 
-  // BroadcastChannel: receive heartbeats from output.html (survives main page refresh)
+  // BroadcastChannel: receive heartbeats from output windows (survives main page refresh)
   try { outputChannel = new BroadcastChannel('lissa-output'); } catch(e) {}
   if (outputChannel) {
     outputChannel.addEventListener('message', function(e) {
       if (e.data.type !== 'ready') return;
       outputConnected = true;
       clearTimeout(_heartbeatTimer);
-      // If output window closes, heartbeats stop — detect after 3 missed beats (6 s)
+      // When all output windows close, heartbeats stop — detect after 3 missed beats (6 s)
       _heartbeatTimer = setTimeout(function() {
         outputConnected = false;
-        outputWindow    = null;
-        let b = document.getElementById('outputWindowBtn');
-        if (b) b.textContent = '▶ Present';
+        outputWindows   = [];
       }, 6000);
-      let btn = document.getElementById('outputWindowBtn');
-      if (btn) btn.textContent = '◼ Close output';
     });
   }
 
@@ -1214,7 +1353,175 @@ function setup() {
     }
   })();
 
-  pushHistory(); // capture initial state
+  // Text blend controls
+  document.getElementById("textInput").addEventListener("input", function() {
+    textMode.text = this.value;
+  });
+  document.getElementById("textInput").addEventListener("change", pushHistory);
+
+  document.getElementById("textFont").addEventListener("change", function() {
+    textMode.font = this.value; pushHistory();
+  });
+  document.getElementById("textBold").addEventListener("change", function() {
+    textMode.bold = this.checked; pushHistory();
+  });
+  document.getElementById("textItalic").addEventListener("change", function() {
+    textMode.italic = this.checked; pushHistory();
+  });
+  document.getElementById("textSizeSlider").addEventListener("input", function() {
+    textMode.size = Number(this.value);
+    document.getElementById("textSizeValue").textContent = this.value;
+  });
+  document.getElementById("textSizeSlider").addEventListener("change", pushHistory);
+  document.getElementById("textBlendSlider").addEventListener("input", function() {
+    textMode.blend = Number(this.value);
+    document.getElementById("textBlendValue").textContent = Number(this.value).toFixed(2);
+  });
+  document.getElementById("textBlendSlider").addEventListener("change", pushHistory);
+
+  // Pre-cache second screen on load — if permission was already granted on a
+  // prior visit this resolves instantly, so _secondScreen is ready before the
+  // user even clicks Present (no flash, no permission dialog on click).
+  if ('getScreenDetails' in window) {
+    window.getScreenDetails().then(function(sd) {
+      _secondScreen = sd.screens.find(function(s) { return !s.isPrimary; }) || null;
+      sd.addEventListener('screenschange', function() {
+        _secondScreen = sd.screens.find(function(s) { return !s.isPrimary; }) || null;
+      });
+    }).catch(function() {});
+  }
+
+  // ── NEW UI: panel toggle (top-right Random+Big4) ─────────
+  var _panel       = document.getElementById('panel');
+  var _panelToggle = document.getElementById('panel-toggle');
+
+  _panelToggle.addEventListener('click', function() {
+    _panel.classList.toggle('hidden');
+  });
+
+  // ── NEW UI: bottom nav — section drawer ───────────────────
+  var _drawer      = document.getElementById('section-drawer');
+  var _activeNav   = null;
+
+  document.querySelectorAll('.nav-pill').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var targetId = this.dataset.section;
+
+      if (_activeNav === targetId && !_drawer.classList.contains('hidden')) {
+        // Same pill: close drawer
+        _drawer.classList.add('hidden');
+        document.querySelectorAll('.nav-pill').forEach(function(b) { b.classList.remove('active'); });
+        _activeNav = null;
+        return;
+      }
+
+      // Position drawer above this pill (centered horizontally, clamped to viewport)
+      var rect      = this.getBoundingClientRect();
+      var drawerW   = 300;
+      var margin    = 16;
+      var left      = rect.left + rect.width / 2 - drawerW / 2;
+      left = Math.max(margin, Math.min(left, window.innerWidth - drawerW - margin));
+      _drawer.style.left = left + 'px';
+
+      // Show only the target section
+      document.querySelectorAll('.drawer-section').forEach(function(s) { s.style.display = 'none'; });
+      var target = document.getElementById(targetId);
+      if (target) target.style.display = 'flex';
+
+      // Update active pill
+      document.querySelectorAll('.nav-pill').forEach(function(b) { b.classList.remove('active'); });
+      this.classList.add('active');
+
+      _drawer.classList.remove('hidden');
+      _activeNav = targetId;
+    });
+  });
+
+  // ── NEW UI: pill slider --pct ─────────────────────────────
+  document.querySelectorAll('.slider-pill').forEach(function(pill) {
+    var slider = pill.querySelector('input[type="range"]');
+    if (!slider) return;
+    function updatePct() {
+      var pct = (Number(slider.value) - Number(slider.min)) /
+                (Number(slider.max) - Number(slider.min)) * 100;
+      pill.style.setProperty('--pct', pct.toFixed(2) + '%');
+    }
+    updatePct();
+    slider.addEventListener('input', function() {
+      updatePct();
+      pill.classList.add('dragging');
+    });
+    slider.addEventListener('mouseup',  function() { pill.classList.remove('dragging'); });
+    slider.addEventListener('touchend', function() { pill.classList.remove('dragging'); });
+  });
+
+  // ── NEW UI: curve shape chips ─────────────────────────────
+  document.querySelectorAll('#curveShapeChips .chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      var val = this.dataset.value;
+      var sel = document.getElementById('curveShape');
+      sel.value = val;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelectorAll('#curveShapeChips .chip').forEach(function(c) {
+        c.classList.toggle('active', c.dataset.value === val);
+      });
+    });
+  });
+
+  // ── NEW UI: color swatch live sync ───────────────────────
+  [['lineColor','lineColorSwatch'],['bgColor','bgColorSwatch'],['filterColor','filterColorSwatch']].forEach(function(pair) {
+    var inp = document.getElementById(pair[0]);
+    var sw  = document.getElementById(pair[1]);
+    if (!inp || !sw) return;
+    inp.addEventListener('input', function() { sw.style.background = this.value; });
+  });
+
+  // ── NEW UI: welcome screen ────────────────────────────────
+  (function() {
+    var ws = document.getElementById('welcome-screen');
+    if (!ws) return;
+    // Force white background for the entire welcome animation
+    bgColor = { r: 237, g: 237, b: 237 };
+    _setEl('bgColor', '#ededed');
+    var _bgSwatch = document.getElementById('bgColorSwatch');
+    if (_bgSwatch) _bgSwatch.style.background = '#ededed';
+
+    // 10 shape randomizations: fast start, slow end (quadratic ease-out spacing)
+    // Colors stay white throughout; only shape/params change
+    var count = 10;
+    var duration = 3200; // ms; last shape settles 300ms before fade begins
+    for (var i = 0; i < count; i++) {
+      (function(idx) {
+        var t = duration * Math.pow(idx / (count - 1), 2);
+        setTimeout(function() {
+          randomizeParams();
+        }, t);
+      })(i);
+    }
+    var wt = document.getElementById('welcome-text');
+    setTimeout(function() {
+      ws.style.opacity = '0';
+      if (wt) wt.style.opacity = '0';
+      setTimeout(function() {
+        ws.style.display = 'none';
+        if (wt) wt.style.display = 'none';
+      }, 820);
+    }, 3500);
+  })();
+
+  // ── NEW UI: toggle button image fallback ──────────────────
+  (function() {
+    var img  = document.getElementById('panel-toggle-img');
+    var icon = document.getElementById('panel-toggle-icon');
+    if (img && img.complete && img.naturalWidth === 0) {
+      img.style.display = 'none';
+      if (icon) icon.style.display = 'block';
+    }
+  })();
+
+  randomizeColors();
+  randomizeParams();
+  pushHistory(); // capture initial randomized state
 }
 
 // =============================================================================
@@ -1222,27 +1529,79 @@ function setup() {
 // =============================================================================
 
 function draw() {
+  _fr = frameRate() || 60;
   updateVideoPixels();
 
   if (showImage && (uploadedImg || isVideoSource)) {
     if (transparentBg) clear(); else background(bgColor.r, bgColor.g, bgColor.b);
     drawPhotoMode();
-    mirrorToOutput();
+    // photo mode not replicated in output window — leave output at last rendered state
     return;
   }
 
   if (drawMode === "mesh") {
+    let aFreqX = applyLfo("freqX"), aFreqY = applyLfo("freqY");
+    let aModFX = applyLfo("modFreqX"), aModFY = applyLfo("modFreqY");
+    let aPhase = applyLfo("phase");
     let aSpeed = applyLfo("speed");
+    let aAmpX  = applyLfo("ampX"),  aAmpY  = applyLfo("ampY");
+    let aBg    = applyColorLfo("bgColor",   bgColor);
+    let aLine  = applyColorLfo("lineColor", lineColor);
     phaseAccumulator += aSpeed;
-    let delta = params.phase + phaseAccumulator;
-    let pts = calcPoints(params.freqX, params.freqY, params.modFreqX, params.modFreqY,
-      delta, params.ampX, params.ampY, Math.round(params.pointCount));
-    let mHsl = rgbToHsl(lineColor.r, lineColor.g, lineColor.b);
+    let delta = aPhase + phaseAccumulator;
+    let pts = calcPoints(aFreqX, aFreqY, aModFX, aModFY,
+      delta, aAmpX, aAmpY, Math.round(params.pointCount));
+    let mHsl = rgbToHsl(aLine.r, aLine.g, aLine.b);
     let mCol = hslToRgb(mHsl.h, mHsl.s * saturation, mHsl.l);
-    if (showCurve) drawMesh(pts, params.connectionRadius, params.connectionRamp, mCol, bgColor);
-    else { if (transparentBg) clear(); else background(bgColor.r, bgColor.g, bgColor.b); }
+    let aTrail      = applyLfo("trail");
+    let aConnRadius = applyLfo("connectionRadius");
+    let aConnRamp   = applyLfo("connectionRamp");
+    let aTextBlend  = applyTextLfo('textBlend');
+    let aTextSize   = applyTextLfo('textSize');
+    if (showCurve) {
+      if (aTextBlend <= 0) {
+        drawMesh(pts, aConnRadius, aConnRamp, mCol, aBg, aTrail);
+      } else {
+        if (transparentBg) {
+          drawingContext.globalCompositeOperation = 'destination-out';
+          drawingContext.fillStyle = `rgba(0,0,0,${aTrail/255})`;
+          drawingContext.fillRect(0, 0, width, height);
+          drawingContext.globalCompositeOperation = 'source-over';
+        } else {
+          background(aBg.r, aBg.g, aBg.b, aTrail);
+        }
+        if (aTextBlend < 1) {
+          push(); drawingContext.globalAlpha = 1 - aTextBlend;
+          push(); translate(width/2,height/2); strokeWeight(0.5); noFill();
+          for(let i=0;i<pts.length;i++){for(let j=0;j<i;j++){let d=pts[i].dist(pts[j]);if(d<=aConnRadius){let a=pow(1/(d/aConnRadius+1),aConnRamp);stroke(mCol.r,mCol.g,mCol.b,a*255);line(pts[i].x,pts[i].y,pts[j].x,pts[j].y);}}}
+          pop(); pop();
+        }
+        _ensureTextCanvas();
+        _meshPath2D(_textMaskCtx, pts, width/2, height/2, mCol, aConnRadius, aConnRamp);
+        _compositeTextMasked(aTextBlend, aTextSize);
+      }
+    } else {
+      if (transparentBg) {
+        drawingContext.globalCompositeOperation = 'destination-out';
+        drawingContext.fillStyle = `rgba(0,0,0,${aTrail/255})`;
+        drawingContext.fillRect(0, 0, width, height);
+        drawingContext.globalCompositeOperation = 'source-over';
+      } else {
+        background(aBg.r, aBg.g, aBg.b, aTrail);
+      }
+    }
     if (imgDrawMode > 0 && imgPixels) drawImageGrid(mCol, imageStrength * 255, phaseAccumulator);
-    mirrorToOutput();
+    mirrorToOutput({
+      type:'state', mode:'mesh', curveShape, showCurve,
+      freqX:aFreqX, freqY:aFreqY, modFreqX:aModFX, modFreqY:aModFY,
+      phase:delta, speed:aSpeed, ampX:aAmpX, ampY:aAmpY,
+      pointCount:Math.round(params.pointCount),
+      connRadius:aConnRadius, connRamp:aConnRamp,
+      bgColor:aBg, lineColor:mCol, transparentBg,
+      brightness, contrastLevel,
+      cf: colorFilter.enabled ? { r:colorFilter.color.r, g:colorFilter.color.g,
+            b:colorFilter.color.b, o:colorFilter.opacity, m:colorFilter.blendMode } : null
+    });
     return;
   }
 
@@ -1272,16 +1631,31 @@ function draw() {
 
   let cx=width/2, cy=height/2;
   let pts=calcPoints(aFreqX,aFreqY,aModFX,aModFY,delta,aAmpX,aAmpY,Math.round(TWO_PI/aStep));
+  let aTextBlend = applyTextLfo('textBlend');
+  let aTextSize  = applyTextLfo('textSize');
   if (showCurve) {
     if (glowEnabled) {
       drawingContext.shadowBlur  = glowSize;
       drawingContext.shadowColor = `rgba(${aLine.r},${aLine.g},${aLine.b},${glowIntensity})`;
     }
-    stroke(aLine.r,aLine.g,aLine.b);
-    strokeWeight(aSW); noFill();
-    beginShape();
-    for(let i=0;i<pts.length;i++) vertex(cx+pts[i].x, cy+pts[i].y);
-    endShape(CLOSE);
+    if (aTextBlend <= 0) {
+      stroke(aLine.r,aLine.g,aLine.b);
+      strokeWeight(aSW); noFill();
+      beginShape();
+      for(let i=0;i<pts.length;i++) vertex(cx+pts[i].x, cy+pts[i].y);
+      endShape(CLOSE);
+    } else {
+      if (aTextBlend < 1) {
+        push(); drawingContext.globalAlpha = 1 - aTextBlend;
+        stroke(aLine.r,aLine.g,aLine.b); strokeWeight(aSW); noFill();
+        beginShape(); for(let i=0;i<pts.length;i++) vertex(cx+pts[i].x,cy+pts[i].y); endShape(CLOSE);
+        pop();
+      }
+      drawingContext.shadowBlur = 0;
+      _ensureTextCanvas();
+      _curvePath2D(_textMaskCtx, pts, cx, cy, aLine, aSW);
+      _compositeTextMasked(aTextBlend, aTextSize);
+    }
     drawingContext.shadowBlur = 0;
   }
 
@@ -1289,27 +1663,64 @@ function draw() {
     drawImageGrid(aLine, imageStrength * 255, phaseAccumulator);
   }
 
-  mirrorToOutput();
+  mirrorToOutput({
+    type:'state', mode:'line', curveShape, showCurve,
+    freqX:aFreqX, freqY:aFreqY, modFreqX:aModFX, modFreqY:aModFY,
+    phase:delta, speed:aSpeed, ampX:aAmpX, ampY:aAmpY,
+    stepCount:Math.round(TWO_PI/aStep), strokeWeight:aSW, trail:aTrail,
+    bgColor:aBg, lineColor:aLine,
+    glowEnabled, glowSize, glowIntensity, transparentBg,
+    brightness, contrastLevel,
+    cf: colorFilter.enabled ? { r:colorFilter.color.r, g:colorFilter.color.g,
+          b:colorFilter.color.b, o:colorFilter.opacity, m:colorFilter.blendMode } : null
+  });
 }
 
-function mirrorToOutput() {
-  if (!outputConnected || !outputChannel || mirrorPending) return;
-  let src = document.querySelector('#canvas-container canvas');
-  if (!src) return;
-  mirrorPending = true;
-  createImageBitmap(src).then(function(bitmap) {
-    mirrorPending = false;
-    if (!outputConnected) { bitmap.close(); return; }
+function mirrorToOutput(state) {
+  if (!outputConnected) return;
+  var wins = outputWindows.filter(function(w) { return !w.closed; });
+  if (!wins.length) return;
+
+  // Push CSS filter + color overlay state via BroadcastChannel (cheap JSON)
+  if (outputChannel) {
     try {
-      outputChannel.postMessage(
-        { type: 'frame', bitmap: bitmap, width: src.width, height: src.height },
-        [bitmap]
-      );
-    } catch(e) { bitmap.close(); }
-  }).catch(function() { mirrorPending = false; });
+      outputChannel.postMessage({
+        type: 'meta',
+        filter: document.getElementById('canvas-container').style.filter || '',
+        cf: colorFilter.enabled
+          ? { r: colorFilter.color.r, g: colorFilter.color.g,
+              b: colorFilter.color.b, o: colorFilter.opacity, m: colorFilter.blendMode }
+          : null
+      });
+    } catch(e) {}
+  }
+
+  // Push pixel-perfect frame via postMessage + ImageBitmap transfer.
+  // postMessage('*') works across null origins (file://) unlike window.opener DOM access.
+  var src = document.querySelector('#defaultCanvas0');
+  if (!src) return;
+  createImageBitmap(src).then(function(firstBmp) {
+    if (wins.length === 1) {
+      if (!wins[0].closed) wins[0].postMessage({ type: 'frame', bmp: firstBmp }, '*', [firstBmp]);
+      else firstBmp.close();
+      return;
+    }
+    // Multiple windows: clone bitmap for each extra window before transferring any
+    var clonePromises = wins.slice(1).map(function() { return createImageBitmap(firstBmp); });
+    Promise.all(clonePromises).then(function(clones) {
+      if (!wins[0].closed) wins[0].postMessage({ type: 'frame', bmp: firstBmp }, '*', [firstBmp]);
+      else firstBmp.close();
+      clones.forEach(function(bmp, i) {
+        var w = wins[i + 1];
+        if (!w.closed) w.postMessage({ type: 'frame', bmp: bmp }, '*', [bmp]);
+        else bmp.close();
+      });
+    }).catch(function() { firstBmp.close(); });
+  }).catch(function() {});
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  meshDirty=true;
+  meshDirty = true;
+  _textMaskCanvas = null; // force resize of mask canvas on next draw
 }
