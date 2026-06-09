@@ -799,5 +799,13 @@ body {
   background: var(--black);
 }
 
+.audio-spectrum {
+  width: 100%;
+  height: 56px;
+  display: block;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
 /* ── HIDDEN ──────────────────────────────────────────────── */
 .hidden { display: none !important; }

@@ -143,6 +143,9 @@ let lfos = {
 let audioIn    = { source: 'amplitude', band: 0, gain: 1.0, smoothing: 0.6, lowHz: 20, highHz: 250 };
 let audioLevel = 0;
 let _mic = null, _amp = null, _fft = null, _micArmed = false;
+// System-audio capture (getDisplayMedia) routes a MediaStream into _amp/_fft
+// instead of the mic; _usingSystemAudio tells disarmMic how to tear it down.
+let _sysSource = null, _sysStream = null, _usingSystemAudio = false;
 
 // LFO-capable params that also expose a mic toggle. bgColor/lineColor are included
 // for the toggle wiring + state sync, but they resolve their audio term inside
@@ -749,14 +752,20 @@ function _setAudioStatus(msg, live) {
 // load. getUserMedia fails on file:// in most browsers; we catch and fail soft.
 // p5.sound is loaded at startup (index.html) only over http(s); on file:// it is
 // absent, so p5.AudioIn is undefined here and we fail soft into the catch.
-async function armMic() {
+async function armMic(deviceIndex) {
   let btn = document.getElementById('enableMicBtn');
   try {
     if (typeof p5 === 'undefined' || !p5.AudioIn) {
       throw new Error('p5.sound not loaded (file:// has no audio — use https/localhost)');
     }
     if (typeof userStartAudio === 'function') await userStartAudio();
+    // Tear down any previous capture (mic or system) before re-arming.
+    if (_mic && _mic.stop)   { try { _mic.stop(); } catch (_e) {} }
+    if (_sysStream) { _sysStream.getTracks().forEach(function(t){ try{t.stop();}catch(e){} }); _sysStream = null; }
+    _sysSource = null; _usingSystemAudio = false;
     _mic = new p5.AudioIn();
+    // setSource picks a specific input device by index (see _populateAudioDevices).
+    if (deviceIndex != null && deviceIndex >= 0 && _mic.setSource) _mic.setSource(deviceIndex);
     // Wrap start() so a getUserMedia denial/rejection lands in our catch.
     await new Promise(function(resolve, reject) { _mic.start(resolve, reject); });
     _amp = new p5.Amplitude(); _amp.setInput(_mic);
@@ -766,6 +775,7 @@ async function armMic() {
     let offBtn = document.getElementById('disableMicBtn');
     if (offBtn) offBtn.disabled = false;
     _setAudioStatus('Mic live', true);
+    _populateAudioDevices();
   } catch (e) {
     _micArmed = false;
     audioLevel = 0;
@@ -776,14 +786,76 @@ async function armMic() {
   }
 }
 
+// Populate the input-device dropdown from p5.AudioIn's source list. Device labels
+// are only exposed by the browser after mic permission is granted, so this runs
+// after a successful arm. Indices line up with _mic.setSource(index).
+function _populateAudioDevices() {
+  if (!_mic || !_mic.getSources) return;
+  _mic.getSources(function(devices) {
+    let sel = document.getElementById('audioDevice');
+    if (!sel) return;
+    sel.innerHTML = '';
+    devices.forEach(function(d, i) {
+      let o = document.createElement('option');
+      o.value = i;
+      o.textContent = d.label || ('Input ' + (i + 1));
+      sel.appendChild(o);
+    });
+    if (_mic.currentSource != null && _mic.currentSource >= 0) sel.value = _mic.currentSource;
+    let row = document.getElementById('audioDeviceRow');
+    if (row) row.style.display = 'flex';
+  });
+}
+
+// Capture system / tab audio via getDisplayMedia (Chrome). The user must tick
+// "Share audio" in the picker. video:true is requested because audio-only display
+// capture is widely unsupported; the video track is dropped immediately.
+// macOS note: only tab/window audio is capturable this way — full system audio
+// needs a virtual loopback device (then use the Input dropdown instead).
+async function armSystemAudio() {
+  try {
+    if (typeof p5 === 'undefined' || !p5.FFT) throw new Error('p5.sound not loaded');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      throw new Error('System audio not supported in this browser');
+    }
+    if (typeof userStartAudio === 'function') await userStartAudio();
+    let stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    let aud = stream.getAudioTracks();
+    if (!aud.length) {
+      stream.getTracks().forEach(function(t){ try{t.stop();}catch(e){} });
+      throw new Error('No audio shared — re-try and tick "Share audio"');
+    }
+    stream.getVideoTracks().forEach(function(t){ try{t.stop();}catch(e){} });
+    if (_mic && _mic.stop) { try { _mic.stop(); } catch (_e) {} _mic = null; }
+    let ac = getAudioContext();
+    _sysSource = ac.createMediaStreamSource(stream);
+    _amp = new p5.Amplitude(); _amp.setInput(_sysSource);
+    _fft = new p5.FFT();        _fft.setInput(_sysSource);
+    _sysStream = stream;
+    _micArmed = true; _usingSystemAudio = true;
+    // If the user stops sharing from the browser bar, tear everything down.
+    aud[0].addEventListener('ended', disarmMic);
+    let offBtn = document.getElementById('disableMicBtn');
+    if (offBtn) offBtn.disabled = false;
+    let devRow = document.getElementById('audioDeviceRow');
+    if (devRow) devRow.style.display = 'none';
+    _setAudioStatus('System audio live', true);
+  } catch (e) {
+    _setAudioStatus('System audio unavailable: ' + ((e && e.message) || e), false);
+    console.warn('armSystemAudio failed:', e);
+  }
+}
+
 // Turn the mic off: stop the stream, reset level, restore the button states.
 // Per-param mic toggles keep their settings; with the mic off they just read 0.
 function disarmMic() {
   if (_mic && _mic.stop) { try { _mic.stop(); } catch (_e) {} }
-  _mic = null; _amp = null; _fft = null;
-  _micArmed = false;
+  if (_sysStream) { _sysStream.getTracks().forEach(function(t){ try{t.stop();}catch(e){} }); }
+  _mic = null; _amp = null; _fft = null; _sysSource = null; _sysStream = null;
+  _micArmed = false; _usingSystemAudio = false;
   audioLevel = 0;
   _updateAudioMeter();
+  _drawAudioViz();   // clear the spectrum
   let onBtn  = document.getElementById('enableMicBtn');
   let offBtn = document.getElementById('disableMicBtn');
   if (onBtn)  onBtn.textContent = 'Enable Mic';
@@ -816,6 +888,50 @@ function updateAudioLevel() {
 function _updateAudioMeter() {
   let fill = document.getElementById('audioMeterFill');
   if (fill) fill.style.width = (audioLevel * 100).toFixed(1) + '%';
+}
+
+// Draw the live FFT spectrum (log frequency axis, 20Hz–20kHz) into the audio
+// panel canvas, shading + outlining the selected EQ band so it's visible which
+// frequencies feed the mic. Skipped when the panel is hidden (offsetParent null)
+// or the mic is off, so it costs nothing in the common case.
+const _VIZ_FMIN = 20, _VIZ_FMAX = 20000;
+function _drawAudioViz() {
+  let cv = document.getElementById('audioSpectrum');
+  if (!cv) return;
+  let ctx = cv.getContext('2d');
+  let W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!_micArmed || !_fft || cv.offsetParent === null) return;
+
+  let spec = _fft.analyze();
+  let nyq  = (typeof sampleRate === 'function' ? sampleRate() : 44100) / 2;
+  let span = Math.log10(_VIZ_FMAX / _VIZ_FMIN);
+  let fx   = function(hz) { return W * Math.log10(Math.max(hz, _VIZ_FMIN) / _VIZ_FMIN) / span; };
+
+  let lo = Math.min(audioIn.lowHz, audioIn.highHz);
+  let hi = Math.max(audioIn.lowHz, audioIn.highHz);
+  let inBandViz = audioIn.source === 'range';     // only highlight when EQ is the active source
+  let xLo = fx(lo), xHi = fx(hi);
+
+  if (inBandViz) {
+    ctx.fillStyle = 'rgba(17,17,17,0.10)';
+    ctx.fillRect(xLo, 0, Math.max(1, xHi - xLo), H);
+  }
+
+  for (let x = 0; x < W; x++) {
+    let hz  = _VIZ_FMIN * Math.pow(_VIZ_FMAX / _VIZ_FMIN, x / W);
+    let bin = Math.min(spec.length - 1, Math.floor(hz / nyq * spec.length));
+    let bh  = (spec[bin] / 255) * H;
+    let on  = inBandViz && hz >= lo && hz <= hi;
+    ctx.fillStyle = on ? 'rgba(17,17,17,0.95)' : 'rgba(17,17,17,0.30)';
+    ctx.fillRect(x, H - bh, 1, bh);
+  }
+
+  if (inBandViz) {
+    ctx.fillStyle = 'rgba(17,17,17,0.55)';
+    ctx.fillRect(xLo, 0, 1, H);
+    ctx.fillRect(Math.min(W - 1, xHi), 0, 1, H);
+  }
 }
 
 // EQ frequency sliders are log-scaled (value = log10(Hz)) so the bass region
@@ -1576,8 +1692,14 @@ function setup() {
   document.getElementById("vignetteSoftnessSlider").addEventListener("change", pushHistory);
 
   // Audio In (mic) — armed only by explicit gesture (click), never on load
-  document.getElementById("enableMicBtn").addEventListener("click", armMic);
+  // Pass no args to armMic — the click Event must not be read as a device index.
+  document.getElementById("enableMicBtn").addEventListener("click", function(){ armMic(); });
+  document.getElementById("systemAudioBtn").addEventListener("click", armSystemAudio);
   document.getElementById("disableMicBtn").addEventListener("click", disarmMic);
+  // Switching input device re-arms the mic on that source.
+  document.getElementById("audioDevice").addEventListener("change", function(){
+    armMic(Number(this.value));
+  });
   document.getElementById("audioSource").addEventListener("change", function(){
     audioIn.source = this.value;
     _updateAudioSourceUi();
@@ -1950,6 +2072,7 @@ function draw() {
   _fr = frameRate() || 60;
   updateAudioLevel();   // shared mic level for this frame (0 until armed)
   _updateAudioMeter();
+  _drawAudioViz();
   updateVideoPixels();
 
   if (showImage && (uploadedImg || isVideoSource)) {

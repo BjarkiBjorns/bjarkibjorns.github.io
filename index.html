@@ -786,10 +786,21 @@
 
           <div class="action-row">
             <button id="enableMicBtn">Enable Mic</button>
-            <button id="disableMicBtn" disabled>Turn Mic Off</button>
+            <button id="systemAudioBtn">System Audio</button>
+            <button id="disableMicBtn" disabled>Off</button>
           </div>
           <div id="audioStatus" class="audio-status">Mic off — needs https (deployed site or localhost), not file://</div>
           <div class="audio-meter"><div class="audio-meter-fill" id="audioMeterFill"></div></div>
+
+          <!-- Live FFT spectrum; the selected EQ band is shaded + outlined -->
+          <canvas id="audioSpectrum" class="audio-spectrum" width="268" height="56"></canvas>
+
+          <!-- Input device — populated after permission; covers interfaces &
+               virtual loopback devices (BlackHole/Loopback) for internal audio -->
+          <div class="select-pill" id="audioDeviceRow" style="display:none">
+            <span class="select-pill-label">Input</span>
+            <select id="audioDevice"></select>
+          </div>
 
           <div class="select-pill">
             <span class="select-pill-label">Source</span>
