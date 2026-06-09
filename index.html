@@ -425,7 +425,7 @@
             <input id="lineColor" type="color" value="#171717" />
           </div>
           <div class="lfo-row">
-            <label><input id="lineColorLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="lineColorLfoToggle" type="checkbox" /> LFO</label><label><input id="lineColorAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="lineColorLfoRateValue">0.50</span></span>
               <input id="lineColorLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -440,7 +440,7 @@
             <input id="bgColor" type="color" value="#ededed" />
           </div>
           <div class="lfo-row">
-            <label><input id="bgColorLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="bgColorLfoToggle" type="checkbox" /> LFO</label><label><input id="bgColorAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="bgColorLfoRateValue">0.50</span></span>
               <input id="bgColorLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -786,6 +786,7 @@
 
           <div class="action-row">
             <button id="enableMicBtn">Enable Mic</button>
+            <button id="disableMicBtn" disabled>Turn Mic Off</button>
           </div>
           <div id="audioStatus" class="audio-status">Mic off — needs https (deployed site or localhost), not file://</div>
           <div class="audio-meter"><div class="audio-meter-fill" id="audioMeterFill"></div></div>
@@ -793,15 +794,42 @@
           <div class="select-pill">
             <span class="select-pill-label">Source</span>
             <select id="audioSource">
-              <option value="amplitude">Amplitude</option>
-              <option value="fft">FFT band</option>
+              <option value="amplitude">Amplitude (full range)</option>
+              <option value="range">Frequency range (EQ)</option>
+              <option value="fft">Single FFT bin</option>
             </select>
+          </div>
+
+          <!-- EQ: band-pass — only energy between Low and High Hz drives the mic -->
+          <div id="audioRangeRow" style="display:none">
+            <div class="chip-row" id="audioRangePresets">
+              <button class="chip active" data-low="20"   data-high="250">Bass</button>
+              <button class="chip" data-low="250"  data-high="500">Low-mid</button>
+              <button class="chip" data-low="500"  data-high="2000">Mid</button>
+              <button class="chip" data-low="2000" data-high="6000">High-mid</button>
+              <button class="chip" data-low="6000" data-high="20000">Treble</button>
+            </div>
+            <!-- Sliders are log-scaled: value = log10(Hz), so 1.301≈20Hz … 4.301≈20kHz -->
+            <div class="slider-pill">
+              <div class="slider-fill"></div>
+              <span class="slider-thumb"></span>
+              <label class="slider-label" for="audioLowHz">Low</label>
+              <span class="slider-value" id="audioLowHzValue">20 Hz</span>
+              <input id="audioLowHz" type="range" min="1.301" max="4.301" step="0.01" value="1.301" />
+            </div>
+            <div class="slider-pill">
+              <div class="slider-fill"></div>
+              <span class="slider-thumb"></span>
+              <label class="slider-label" for="audioHighHz">High</label>
+              <span class="slider-value" id="audioHighHzValue">250 Hz</span>
+              <input id="audioHighHz" type="range" min="1.301" max="4.301" step="0.01" value="2.398" />
+            </div>
           </div>
 
           <div class="slider-pill" id="audioBandRow" style="display:none">
             <div class="slider-fill"></div>
             <span class="slider-thumb"></span>
-            <label class="slider-label" for="audioBand">Band</label>
+            <label class="slider-label" for="audioBand">Bin</label>
             <span class="slider-value" id="audioBandValue">0</span>
             <input id="audioBand" type="range" min="0" max="255" step="1" value="0" />
           </div>

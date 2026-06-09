@@ -138,18 +138,22 @@ let lfos = {
 // LFO/base value — the mic stacks with the LFO, it does not replace it.
 // The mic stream/permission is NEVER serialized; only audioIn settings persist
 // and the user must re-arm by gesture after load.
-let audioIn    = { source: 'amplitude', band: 0, gain: 1.0, smoothing: 0.6 };
+// source: 'amplitude' = overall level, 'range' = band-pass EQ (lowHz..highHz),
+// 'fft' = single FFT bin. lowHz/highHz isolate which frequencies drive the mic.
+let audioIn    = { source: 'amplitude', band: 0, gain: 1.0, smoothing: 0.6, lowHz: 20, highHz: 250 };
 let audioLevel = 0;
 let _mic = null, _amp = null, _fft = null, _micArmed = false;
 
-// LFO-capable params that also expose a mic toggle. Colors (bgColor/lineColor)
-// are excluded: they resolve via applyColorLfo, not the scalar applyAudioMod path.
+// LFO-capable params that also expose a mic toggle. bgColor/lineColor are included
+// for the toggle wiring + state sync, but they resolve their audio term inside
+// applyColorLfo (hue shift), NOT via the scalar applyAudioMod path used below.
 const AUDIO_KEYS = [
   "freqX","freqY","modFreqX","modFreqY","phase","speed",
   "ampX","ampY","stepSize","strokeWeight","trail",
   "connectionRadius","connectionRamp","textSize","textBlend",
   "imgScale","imgOffsetX","imgOffsetY","imageStrength","imgCols",
-  "imgFactorX","imgFactorY"
+  "imgFactorX","imgFactorY",
+  "bgColor","lineColor"
 ];
 // Per-param mic flag lives alongside the LFO state so the lfos deep-copy carries
 // it through captureState/restoreState/settings automatically.
@@ -502,12 +506,17 @@ function restoreState(snap) {
 
   // Audio In settings — the mic itself stays un-armed; user re-arms by gesture.
   if (snap.audioIn) Object.assign(audioIn, snap.audioIn);
+  // Defaults for the EQ range when loading older saves that predate it.
+  if (audioIn.lowHz  == null) audioIn.lowHz  = 20;
+  if (audioIn.highHz == null) audioIn.highHz = 250;
   _setEl("audioSource",          audioIn.source);
   _setEl("audioBand",            audioIn.band);      _setTxt("audioBandValue",      audioIn.band);
   _setEl("audioGainSlider",      audioIn.gain);      _setTxt("audioGainValue",      audioIn.gain.toFixed(2));
   _setEl("audioSmoothingSlider", audioIn.smoothing); _setTxt("audioSmoothingValue", audioIn.smoothing.toFixed(2));
-  let _bandRow = document.getElementById("audioBandRow");
-  if (_bandRow) _bandRow.style.display = audioIn.source === 'fft' ? 'flex' : 'none';
+  _setFreqSlider("audioLowHz",  "audioLowHzValue",  audioIn.lowHz);
+  _setFreqSlider("audioHighHz", "audioHighHzValue", audioIn.highHz);
+  _syncRangePresets();
+  _updateAudioSourceUi();
   // Per-param mic flags (already copied onto lfos via the snap.lfos loop above)
   AUDIO_KEYS.forEach(function(key) {
     _setChk(key + "AudioToggle", !!(lfos[key] && lfos[key].audio));
@@ -657,10 +666,16 @@ function applyLfo(key) {
 
 function applyColorLfo(key, baseColor) {
   let lfo=lfos[key];
-  if(!lfo.enabled) return baseColor;
-  lfo.phase+=(TWO_PI*lfo.rate)/_fr;
+  if(!lfo.enabled && !lfo.audio) return baseColor;
+  let hueShift = 0;
+  if (lfo.enabled) {
+    lfo.phase+=(TWO_PI*lfo.rate)/_fr;
+    hueShift += sin(lfo.phase)*lfo.depth*180;
+  }
+  // Mic: drive the hue by the shared per-frame audio level (depth = sensitivity).
+  if (lfo.audio) hueShift += audioLevel*lfo.depth*360;
   let hsl=rgbToHsl(baseColor.r,baseColor.g,baseColor.b);
-  return hslToRgb(hsl.h+sin(lfo.phase)*lfo.depth*180, max(hsl.s,0.8), max(hsl.l,0.5));
+  return hslToRgb(hsl.h+hueShift, max(hsl.s,0.8), max(hsl.l,0.5));
 }
 
 const _textLfoRanges = { textSize: { min:20, max:600 }, textBlend: { min:0, max:1 } };
@@ -748,6 +763,8 @@ async function armMic() {
     _fft = new p5.FFT();        _fft.setInput(_mic);
     _micArmed = true;
     if (btn) btn.textContent = 'Mic on';
+    let offBtn = document.getElementById('disableMicBtn');
+    if (offBtn) offBtn.disabled = false;
     _setAudioStatus('Mic live', true);
   } catch (e) {
     _micArmed = false;
@@ -759,6 +776,21 @@ async function armMic() {
   }
 }
 
+// Turn the mic off: stop the stream, reset level, restore the button states.
+// Per-param mic toggles keep their settings; with the mic off they just read 0.
+function disarmMic() {
+  if (_mic && _mic.stop) { try { _mic.stop(); } catch (_e) {} }
+  _mic = null; _amp = null; _fft = null;
+  _micArmed = false;
+  audioLevel = 0;
+  _updateAudioMeter();
+  let onBtn  = document.getElementById('enableMicBtn');
+  let offBtn = document.getElementById('disableMicBtn');
+  if (onBtn)  onBtn.textContent = 'Enable Mic';
+  if (offBtn) offBtn.disabled = true;
+  _setAudioStatus('Mic off', false);
+}
+
 // Read one shared audio level per frame (called at the top of draw, like _fr).
 // Until the mic is armed audioLevel stays 0, so the render loop never blocks.
 function updateAudioLevel() {
@@ -766,6 +798,12 @@ function updateAudioLevel() {
   let raw;
   if (audioIn.source === 'amplitude') {
     raw = _amp.getLevel();
+  } else if (audioIn.source === 'range') {
+    // Band-pass EQ: average spectral energy within [lowHz, highHz] only.
+    _fft.analyze();                                   // must run before getEnergy
+    let lo = Math.min(audioIn.lowHz, audioIn.highHz);
+    let hi = Math.max(audioIn.lowHz, audioIn.highHz);
+    raw = _fft.getEnergy(lo, hi) / 255;
   } else {
     let spectrum = _fft.analyze();
     let i = Math.min(audioIn.band, spectrum.length - 1);
@@ -778,6 +816,33 @@ function updateAudioLevel() {
 function _updateAudioMeter() {
   let fill = document.getElementById('audioMeterFill');
   if (fill) fill.style.width = (audioLevel * 100).toFixed(1) + '%';
+}
+
+// EQ frequency sliders are log-scaled (value = log10(Hz)) so the bass region
+// gets usable resolution. These convert between Hz and slider position.
+function _hzToSliderPos(hz) { return Math.log10(Math.max(hz, 1)); }
+
+// Set a freq slider + its label from a Hz value (used by restore + presets).
+function _setFreqSlider(sliderId, valueId, hz) {
+  _setEl(sliderId, _hzToSliderPos(hz));
+  _setTxt(valueId, Math.round(hz) + ' Hz');
+}
+
+// Mark the preset chip whose [low,high] matches the current range (else clear all).
+function _syncRangePresets() {
+  document.querySelectorAll('#audioRangePresets .chip').forEach(function(chip) {
+    let match = Number(chip.dataset.low) === audioIn.lowHz &&
+                Number(chip.dataset.high) === audioIn.highHz;
+    chip.classList.toggle('active', match);
+  });
+}
+
+// Show only the controls relevant to the current source (range EQ vs single bin).
+function _updateAudioSourceUi() {
+  let bandRow  = document.getElementById('audioBandRow');
+  let rangeRow = document.getElementById('audioRangeRow');
+  if (bandRow)  bandRow.style.display  = audioIn.source === 'fft'   ? 'flex'  : 'none';
+  if (rangeRow) rangeRow.style.display = audioIn.source === 'range' ? 'block' : 'none';
 }
 
 // Add the audio term on top of an already-resolved LFO/base value. Reuses the
@@ -1512,11 +1577,37 @@ function setup() {
 
   // Audio In (mic) — armed only by explicit gesture (click), never on load
   document.getElementById("enableMicBtn").addEventListener("click", armMic);
+  document.getElementById("disableMicBtn").addEventListener("click", disarmMic);
   document.getElementById("audioSource").addEventListener("change", function(){
     audioIn.source = this.value;
-    let row = document.getElementById("audioBandRow");
-    if (row) row.style.display = this.value === 'fft' ? 'flex' : 'none';
+    _updateAudioSourceUi();
     pushHistory();
+  });
+
+  // EQ band-pass: log-scaled Low/High Hz sliders (value = log10(Hz))
+  [["audioLowHz","audioLowHzValue","lowHz"],
+   ["audioHighHz","audioHighHzValue","highHz"]].forEach(function(cfg){
+    let s = document.getElementById(cfg[0]);
+    if (!s) return;
+    s.addEventListener("input", function(){
+      let hz = Math.round(Math.pow(10, Number(this.value)));
+      audioIn[cfg[2]] = hz;
+      document.getElementById(cfg[1]).textContent = hz + ' Hz';
+      _syncRangePresets();
+    });
+    s.addEventListener("change", pushHistory);
+  });
+
+  // EQ presets: each chip sets a low/high range, then highlights itself
+  document.querySelectorAll('#audioRangePresets .chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      audioIn.lowHz  = Number(this.dataset.low);
+      audioIn.highHz = Number(this.dataset.high);
+      _setFreqSlider("audioLowHz",  "audioLowHzValue",  audioIn.lowHz);
+      _setFreqSlider("audioHighHz", "audioHighHzValue", audioIn.highHz);
+      _syncRangePresets();
+      pushHistory();
+    });
   });
   document.getElementById("audioBand").addEventListener("input", function(){
     audioIn.band = Number(this.value);
