@@ -8,9 +8,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
-    <!-- p5.sound is loaded lazily by _ensureP5Sound() in sketch.js. Loading it
-         here aborts p5 startup on file:// — its AudioWorklet module can't load
-         over the file:// protocol, and the error fires before setup() runs. -->
+    <script>
+      // Load p5.sound at startup ONLY over http(s). On file:// its AudioWorklet
+      // module can't load and that error aborts p5 before setup() runs (blank
+      // canvas, stuck welcome screen). document.write keeps the tag parser-inserted
+      // so p5.sound loads before p5's window-load init and can register the
+      // worklet hook the mic needs. On file:// it's skipped — canvas still runs,
+      // mic just fails soft (audio needs https/localhost anyway).
+      if (location.protocol !== 'file:') {
+        document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js"><\/script>');
+      }
+    </script>
 
   </head>
   <body>

@@ -730,30 +730,16 @@ function _setAudioStatus(msg, live) {
   if (el) { el.textContent = msg; el.classList.toggle('live', !!live); }
 }
 
-// Lazily inject p5.sound. It is NOT loaded in index.html because its AudioWorklet
-// module fails to load over file://, and that error aborts p5 startup before
-// setup() runs. Loading it here (after p5 is already running, from a user gesture)
-// keeps the canvas alive on file:// and only pulls in sound when the mic is armed.
-let _p5SoundPromise = null;
-function _ensureP5Sound() {
-  if (typeof p5 !== 'undefined' && p5.AudioIn) return Promise.resolve();
-  if (_p5SoundPromise) return _p5SoundPromise;
-  _p5SoundPromise = new Promise(function(resolve, reject) {
-    let s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js';
-    s.onload  = function() { resolve(); };
-    s.onerror = function() { _p5SoundPromise = null; reject(new Error('p5.sound failed to load')); };
-    document.head.appendChild(s);
-  });
-  return _p5SoundPromise;
-}
-
 // Arm the mic. MUST be called from a user gesture (Enable-Mic click) — never on
 // load. getUserMedia fails on file:// in most browsers; we catch and fail soft.
+// p5.sound is loaded at startup (index.html) only over http(s); on file:// it is
+// absent, so p5.AudioIn is undefined here and we fail soft into the catch.
 async function armMic() {
   let btn = document.getElementById('enableMicBtn');
   try {
-    await _ensureP5Sound();
+    if (typeof p5 === 'undefined' || !p5.AudioIn) {
+      throw new Error('p5.sound not loaded (file:// has no audio — use https/localhost)');
+    }
     if (typeof userStartAudio === 'function') await userStartAudio();
     _mic = new p5.AudioIn();
     // Wrap start() so a getUserMedia denial/rejection lands in our catch.
