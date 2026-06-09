@@ -8,6 +8,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+    <!-- p5.sound is loaded lazily by _ensureP5Sound() in sketch.js. Loading it
+         here aborts p5 startup on file:// — its AudioWorklet module can't load
+         over the file:// protocol, and the error fires before setup() runs. -->
+
   </head>
   <body>
 
@@ -33,7 +37,7 @@
           <input id="tempoSlider" type="range" min="0" max="0.05" step="0.001" value="0.005" />
         </div>
         <div class="lfo-row">
-          <label><input id="speedLfoToggle" type="checkbox" /> LFO</label>
+          <div class="lfo-toggles"><label><input id="speedLfoToggle" type="checkbox" /> LFO</label><label><input id="speedAudioToggle" type="checkbox" /> Mic</label></div>
           <div class="lfo-params">
             <span>Rate: <span id="speedLfoRateValue">0.50</span></span>
             <input id="speedLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -72,24 +76,49 @@
       </div>
     </div>
 
+    <!-- Utility panel — top left, always-visible peer of #panel-fixed, collapsible -->
+    <div id="utility-panel">
+      <div id="utility-header">
+        <span class="utility-panel-title">Output</span>
+        <button id="utility-collapse" aria-label="Collapse utility panel" title="Collapse">&#8722;</button>
+      </div>
+      <div id="utility-groups">
+
+        <div class="utility-group">
+          <div class="utility-group-label">Export</div>
+          <div class="utility-row">
+            <button class="utility-btn" id="savePngBtn">PNG</button>
+            <button class="utility-btn" id="saveSvgBtn">SVG</button>
+            <button class="utility-btn" id="outputWindowBtn">&#9654; Present</button>
+          </div>
+        </div>
+
+        <div class="utility-group">
+          <div class="utility-group-label">Session</div>
+          <div class="utility-row">
+            <button class="utility-btn" id="saveSettingsBtn">Save</button>
+            <button class="utility-btn" id="loadSettingsBtn">Load</button>
+          </div>
+        </div>
+
+        <div class="utility-group">
+          <div class="utility-group-label">Canvas</div>
+          <div class="utility-row">
+            <label class="utility-label"><input id="transparentBg" type="checkbox" /> Transparent BG</label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- Section drawer — slides up from the clicked nav pill -->
     <div id="section-drawer" class="hidden">
 
-      <!-- Utility strip (always visible while drawer is open) -->
+      <!-- Mode switch (primary control — stays in the drawer per spec Open Q2) -->
       <div id="drawer-utility">
-        <div class="utility-row">
-          <div class="mode-switcher">
-            <button class="mode-btn active" data-mode="line">Line</button>
-            <button class="mode-btn" data-mode="mesh">Mesh</button>
-          </div>
-          <button class="utility-btn" id="savePngBtn">PNG</button>
-          <button class="utility-btn" id="saveSvgBtn">SVG</button>
-          <button class="utility-btn" id="outputWindowBtn">&#9654; Present</button>
-        </div>
-        <div class="utility-row">
-          <label class="utility-label"><input id="transparentBg" type="checkbox" /> Transparent BG</label>
-          <button class="utility-btn" id="saveSettingsBtn">Save</button>
-          <button class="utility-btn" id="loadSettingsBtn">Load</button>
+        <div class="mode-switcher">
+          <button class="mode-btn active" data-mode="line">Line</button>
+          <button class="mode-btn" data-mode="mesh">Mesh</button>
         </div>
         <!-- Hidden for backward-compat -->
         <button id="randomColorsBtn" style="display:none"></button>
@@ -110,7 +139,7 @@
             <input id="freqXSlider" type="range" min="1" max="8" step="0.01" value="1" />
           </div>
           <div class="lfo-row">
-            <label><input id="freqXLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="freqXLfoToggle" type="checkbox" /> LFO</label><label><input id="freqXAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="freqXLfoRateValue">0.50</span></span>
               <input id="freqXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -128,7 +157,7 @@
             <input id="freqYSlider" type="range" min="1" max="8" step="0.01" value="1" />
           </div>
           <div class="lfo-row">
-            <label><input id="freqYLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="freqYLfoToggle" type="checkbox" /> LFO</label><label><input id="freqYAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="freqYLfoRateValue">0.50</span></span>
               <input id="freqYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -146,7 +175,7 @@
             <input id="ampXSlider" type="range" min="0.05" max="0.9" step="0.01" value="0.4" />
           </div>
           <div class="lfo-row">
-            <label><input id="ampXLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="ampXLfoToggle" type="checkbox" /> LFO</label><label><input id="ampXAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="ampXLfoRateValue">0.50</span></span>
               <input id="ampXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -164,7 +193,7 @@
             <input id="ampYSlider" type="range" min="0.05" max="0.9" step="0.01" value="0.4" />
           </div>
           <div class="lfo-row">
-            <label><input id="ampYLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="ampYLfoToggle" type="checkbox" /> LFO</label><label><input id="ampYAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="ampYLfoRateValue">0.50</span></span>
               <input id="ampYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -186,7 +215,7 @@
             <input id="modFreqXSlider" type="range" min="1" max="8" step="0.01" value="1" />
           </div>
           <div class="lfo-row">
-            <label><input id="modFreqXLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="modFreqXLfoToggle" type="checkbox" /> LFO</label><label><input id="modFreqXAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="modFreqXLfoRateValue">0.50</span></span>
               <input id="modFreqXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -204,7 +233,7 @@
             <input id="modFreqYSlider" type="range" min="1" max="8" step="0.01" value="1" />
           </div>
           <div class="lfo-row">
-            <label><input id="modFreqYLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="modFreqYLfoToggle" type="checkbox" /> LFO</label><label><input id="modFreqYAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="modFreqYLfoRateValue">0.50</span></span>
               <input id="modFreqYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -222,7 +251,7 @@
             <input id="phaseSlider" type="range" min="0" max="6.28" step="0.01" value="0" />
           </div>
           <div class="lfo-row">
-            <label><input id="phaseLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="phaseLfoToggle" type="checkbox" /> LFO</label><label><input id="phaseAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="phaseLfoRateValue">0.50</span></span>
               <input id="phaseLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -257,7 +286,7 @@
               <input id="stepSizeSlider" type="range" min="0.001" max="0.2" step="0.001" value="0.001" />
             </div>
             <div class="lfo-row">
-              <label><input id="stepSizeLfoToggle" type="checkbox" /> LFO</label>
+              <div class="lfo-toggles"><label><input id="stepSizeLfoToggle" type="checkbox" /> LFO</label><label><input id="stepSizeAudioToggle" type="checkbox" /> Mic</label></div>
               <div class="lfo-params">
                 <span>Rate: <span id="stepSizeLfoRateValue">0.50</span></span>
                 <input id="stepSizeLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -277,7 +306,7 @@
               <input id="strokeWeightSlider" type="range" min="0.5" max="10" step="0.1" value="0.5" />
             </div>
             <div class="lfo-row">
-              <label><input id="strokeWeightLfoToggle" type="checkbox" /> LFO</label>
+              <div class="lfo-toggles"><label><input id="strokeWeightLfoToggle" type="checkbox" /> LFO</label><label><input id="strokeWeightAudioToggle" type="checkbox" /> Mic</label></div>
               <div class="lfo-params">
                 <span>Rate: <span id="strokeWeightLfoRateValue">0.50</span></span>
                 <input id="strokeWeightLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -304,7 +333,7 @@
               <input id="connectionRadiusSlider" type="range" min="10" max="300" step="1" value="100" />
             </div>
             <div class="lfo-row">
-              <label><input id="connectionRadiusLfoToggle" type="checkbox" /> LFO</label>
+              <div class="lfo-toggles"><label><input id="connectionRadiusLfoToggle" type="checkbox" /> LFO</label><label><input id="connectionRadiusAudioToggle" type="checkbox" /> Mic</label></div>
               <div class="lfo-params">
                 <span>Rate: <span id="connectionRadiusLfoRateValue">0.50</span></span>
                 <input id="connectionRadiusLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -320,7 +349,7 @@
               <input id="connectionRampSlider" type="range" min="1" max="12" step="0.1" value="6" />
             </div>
             <div class="lfo-row">
-              <label><input id="connectionRampLfoToggle" type="checkbox" /> LFO</label>
+              <div class="lfo-toggles"><label><input id="connectionRampLfoToggle" type="checkbox" /> LFO</label><label><input id="connectionRampAudioToggle" type="checkbox" /> Mic</label></div>
               <div class="lfo-params">
                 <span>Rate: <span id="connectionRampLfoRateValue">0.50</span></span>
                 <input id="connectionRampLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -343,7 +372,7 @@
             <input id="trailSlider" type="range" min="1" max="255" step="1" value="100" />
           </div>
           <div class="lfo-row">
-            <label><input id="trailLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="trailLfoToggle" type="checkbox" /> LFO</label><label><input id="trailAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="trailLfoRateValue">0.50</span></span>
               <input id="trailLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -457,6 +486,37 @@
             </select>
           </div>
 
+          <label class="toggle-pill" for="vignetteEnabled">
+            <span class="toggle-pill-label">Vignette</span>
+            <span class="toggle-switch">
+              <input id="vignetteEnabled" type="checkbox" />
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </span>
+          </label>
+
+          <div class="color-pill">
+            <span class="color-pill-label">Vignette color</span>
+            <span class="color-swatch" id="vignetteColorSwatch" style="background:#000000"></span>
+            <input id="vignetteColor" type="color" value="#000000" />
+          </div>
+
+          <div class="slider-pill">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" for="vignetteAmountSlider">Amount</label>
+            <span class="slider-value" id="vignetteAmountValue">0.40</span>
+            <input id="vignetteAmountSlider" type="range" min="0" max="1" step="0.01" value="0.4" />
+          </div>
+
+          <div class="slider-pill">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" for="vignetteSoftnessSlider">Softness</label>
+            <span class="slider-value" id="vignetteSoftnessValue">0.50</span>
+            <input id="vignetteSoftnessSlider" type="range" min="0" max="1" step="0.01" value="0.5" />
+          </div>
+
         </div><!-- end #colorBody -->
 
         <!-- ── IMAGE ── -->
@@ -487,49 +547,166 @@
               <option value="5">Colored dots</option>
               <option value="6">Relief — neighbour displacement</option>
               <option value="7">Colored rotated tiles</option>
-              <option value="8">Pixel quads — hue by mouse</option>
+              <option value="8">Pixel quads — hue by Factor X/Y</option>
               <option value="9" selected>Rects + ellipses — rotation by brightness</option>
+            </select>
+          </div>
+
+          <div class="select-pill">
+            <span class="select-pill-label">Blend</span>
+            <select id="imgBlendMode">
+              <option value="normal">Normal</option>
+              <option value="multiply">Multiply</option>
+              <option value="screen">Screen</option>
+              <option value="overlay">Overlay</option>
+              <option value="darkest">Darken</option>
+              <option value="lightest">Lighten</option>
+              <option value="difference">Difference</option>
+              <option value="exclusion">Exclusion</option>
+              <option value="add">Add</option>
+              <option value="burn">Burn</option>
+              <option value="dodge">Dodge</option>
             </select>
           </div>
 
           <div class="slider-pill">
             <div class="slider-fill"></div>
             <span class="slider-thumb"></span>
-            <label class="slider-label" for="imgColsSlider">Resolution</label>
+            <label class="slider-label" id="label-imgCols" for="imgColsSlider">Resolution</label>
             <span class="slider-value" id="imgColsValue">80</span>
             <input id="imgColsSlider" type="range" min="20" max="200" step="1" value="80" />
           </div>
+          <div class="lfo-row">
+            <div class="lfo-toggles">
+              <label><input id="imgColsLfoToggle" type="checkbox" /> LFO</label>
+              <label><input id="imgColsAudioToggle" type="checkbox" /> Mic</label>
+            </div>
+            <div class="lfo-params">
+              <span>Rate: <span id="imgColsLfoRateValue">0.50</span></span>
+              <input id="imgColsLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="imgColsLfoDepthValue">0.50</span></span>
+              <input id="imgColsLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
 
           <div class="slider-pill">
             <div class="slider-fill"></div>
             <span class="slider-thumb"></span>
-            <label class="slider-label" for="imageStrengthSlider">Opacity</label>
+            <label class="slider-label" id="label-imageStrength" for="imageStrengthSlider">Opacity</label>
             <span class="slider-value" id="imageStrengthValue">1.00</span>
             <input id="imageStrengthSlider" type="range" min="0" max="1" step="0.01" value="1" />
           </div>
+          <div class="lfo-row">
+            <div class="lfo-toggles">
+              <label><input id="imageStrengthLfoToggle" type="checkbox" /> LFO</label>
+              <label><input id="imageStrengthAudioToggle" type="checkbox" /> Mic</label>
+            </div>
+            <div class="lfo-params">
+              <span>Rate: <span id="imageStrengthLfoRateValue">0.50</span></span>
+              <input id="imageStrengthLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="imageStrengthLfoDepthValue">0.50</span></span>
+              <input id="imageStrengthLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
 
           <div class="slider-pill">
             <div class="slider-fill"></div>
             <span class="slider-thumb"></span>
-            <label class="slider-label" for="imgScaleSlider">Scale</label>
+            <label class="slider-label" id="label-imgScale" for="imgScaleSlider">Scale</label>
             <span class="slider-value" id="imgScaleValue">1.00</span>
             <input id="imgScaleSlider" type="range" min="0.1" max="8" step="0.01" value="1" />
           </div>
-
-          <div class="slider-pill">
-            <div class="slider-fill"></div>
-            <span class="slider-thumb"></span>
-            <label class="slider-label" for="imgOffsetXSlider">Offset X</label>
-            <span class="slider-value" id="imgOffsetXValue">0.00</span>
-            <input id="imgOffsetXSlider" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
+          <div class="lfo-row">
+            <div class="lfo-toggles">
+              <label><input id="imgScaleLfoToggle" type="checkbox" /> LFO</label>
+              <label><input id="imgScaleAudioToggle" type="checkbox" /> Mic</label>
+            </div>
+            <div class="lfo-params">
+              <span>Rate: <span id="imgScaleLfoRateValue">0.50</span></span>
+              <input id="imgScaleLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="imgScaleLfoDepthValue">0.50</span></span>
+              <input id="imgScaleLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
           </div>
 
           <div class="slider-pill">
             <div class="slider-fill"></div>
             <span class="slider-thumb"></span>
-            <label class="slider-label" for="imgOffsetYSlider">Offset Y</label>
+            <label class="slider-label" id="label-imgOffsetX" for="imgOffsetXSlider">Offset X</label>
+            <span class="slider-value" id="imgOffsetXValue">0.00</span>
+            <input id="imgOffsetXSlider" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
+          </div>
+          <div class="lfo-row">
+            <div class="lfo-toggles">
+              <label><input id="imgOffsetXLfoToggle" type="checkbox" /> LFO</label>
+              <label><input id="imgOffsetXAudioToggle" type="checkbox" /> Mic</label>
+            </div>
+            <div class="lfo-params">
+              <span>Rate: <span id="imgOffsetXLfoRateValue">0.50</span></span>
+              <input id="imgOffsetXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="imgOffsetXLfoDepthValue">0.50</span></span>
+              <input id="imgOffsetXLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
+
+          <div class="slider-pill">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" id="label-imgOffsetY" for="imgOffsetYSlider">Offset Y</label>
             <span class="slider-value" id="imgOffsetYValue">0.00</span>
             <input id="imgOffsetYSlider" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
+          </div>
+          <div class="lfo-row">
+            <div class="lfo-toggles">
+              <label><input id="imgOffsetYLfoToggle" type="checkbox" /> LFO</label>
+              <label><input id="imgOffsetYAudioToggle" type="checkbox" /> Mic</label>
+            </div>
+            <div class="lfo-params">
+              <span>Rate: <span id="imgOffsetYLfoRateValue">0.50</span></span>
+              <input id="imgOffsetYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="imgOffsetYLfoDepthValue">0.50</span></span>
+              <input id="imgOffsetYLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
+
+          <div class="slider-pill">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" id="label-imgFactorX" for="imgFactorXSlider">Factor X</label>
+            <span class="slider-value" id="imgFactorXValue">0.50</span>
+            <input id="imgFactorXSlider" type="range" min="0.05" max="1" step="0.01" value="0.5" />
+          </div>
+          <div class="lfo-row">
+            <div class="lfo-toggles">
+              <label><input id="imgFactorXLfoToggle" type="checkbox" /> LFO</label>
+              <label><input id="imgFactorXAudioToggle" type="checkbox" /> Mic</label>
+            </div>
+            <div class="lfo-params">
+              <span>Rate: <span id="imgFactorXLfoRateValue">0.50</span></span>
+              <input id="imgFactorXLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="imgFactorXLfoDepthValue">0.50</span></span>
+              <input id="imgFactorXLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
+          </div>
+
+          <div class="slider-pill">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" id="label-imgFactorY" for="imgFactorYSlider">Factor Y</label>
+            <span class="slider-value" id="imgFactorYValue">0.50</span>
+            <input id="imgFactorYSlider" type="range" min="0.05" max="1" step="0.01" value="0.5" />
+          </div>
+          <div class="lfo-row">
+            <div class="lfo-toggles">
+              <label><input id="imgFactorYLfoToggle" type="checkbox" /> LFO</label>
+              <label><input id="imgFactorYAudioToggle" type="checkbox" /> Mic</label>
+            </div>
+            <div class="lfo-params">
+              <span>Rate: <span id="imgFactorYLfoRateValue">0.50</span></span>
+              <input id="imgFactorYLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
+              <span>Depth: <span id="imgFactorYLfoDepthValue">0.50</span></span>
+              <input id="imgFactorYLfoDepth" type="range" min="0" max="1" step="0.01" value="0.5" />
+            </div>
           </div>
 
         </div><!-- end #imageBody -->
@@ -548,7 +725,7 @@
             </div>
           </div>
           <div class="lfo-row">
-            <label><input id="textBlendLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="textBlendLfoToggle" type="checkbox" /> LFO</label><label><input id="textBlendAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="textBlendLfoRateValue">0.500</span></span>
               <input id="textBlendLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -585,7 +762,7 @@
             <input id="textSizeSlider" type="range" min="20" max="600" step="5" value="200" />
           </div>
           <div class="lfo-row">
-            <label><input id="textSizeLfoToggle" type="checkbox" /> LFO</label>
+            <div class="lfo-toggles"><label><input id="textSizeLfoToggle" type="checkbox" /> LFO</label><label><input id="textSizeAudioToggle" type="checkbox" /> Mic</label></div>
             <div class="lfo-params">
               <span>Rate: <span id="textSizeLfoRateValue">0.500</span></span>
               <input id="textSizeLfoRate" type="range" min="-3" max="0.699" step="0.01" value="-0.301" />
@@ -595,6 +772,49 @@
           </div>
 
         </div><!-- end #textBody -->
+
+        <!-- ── AUDIO IN ── -->
+        <div id="audioBody" class="drawer-section" style="display:none">
+
+          <div class="action-row">
+            <button id="enableMicBtn">Enable Mic</button>
+          </div>
+          <div id="audioStatus" class="audio-status">Mic off — needs https (deployed site or localhost), not file://</div>
+          <div class="audio-meter"><div class="audio-meter-fill" id="audioMeterFill"></div></div>
+
+          <div class="select-pill">
+            <span class="select-pill-label">Source</span>
+            <select id="audioSource">
+              <option value="amplitude">Amplitude</option>
+              <option value="fft">FFT band</option>
+            </select>
+          </div>
+
+          <div class="slider-pill" id="audioBandRow" style="display:none">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" for="audioBand">Band</label>
+            <span class="slider-value" id="audioBandValue">0</span>
+            <input id="audioBand" type="range" min="0" max="255" step="1" value="0" />
+          </div>
+
+          <div class="slider-pill">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" for="audioGainSlider">Gain</label>
+            <span class="slider-value" id="audioGainValue">1.00</span>
+            <input id="audioGainSlider" type="range" min="0" max="4" step="0.01" value="1" />
+          </div>
+
+          <div class="slider-pill">
+            <div class="slider-fill"></div>
+            <span class="slider-thumb"></span>
+            <label class="slider-label" for="audioSmoothingSlider">Smoothing</label>
+            <span class="slider-value" id="audioSmoothingValue">0.60</span>
+            <input id="audioSmoothingSlider" type="range" min="0" max="0.95" step="0.01" value="0.6" />
+          </div>
+
+        </div><!-- end #audioBody -->
 
       </div><!-- end #drawer-content -->
     </div><!-- end #section-drawer -->
@@ -607,6 +827,7 @@
         <button class="nav-pill" data-section="colorBody">Color</button>
         <button class="nav-pill" data-section="imageBody">Image</button>
         <button class="nav-pill" data-section="textBody">Text</button>
+        <button class="nav-pill" data-section="audioBody">Audio</button>
       </div>
       <div id="panel-toggle">
         <img id="panel-toggle-img"
@@ -619,6 +840,7 @@
 
     <div id="canvas-container"></div>
     <div id="color-filter"></div>
+    <div id="vignette"></div>
     <script src="sketch.js"></script>
   </body>
 </html>

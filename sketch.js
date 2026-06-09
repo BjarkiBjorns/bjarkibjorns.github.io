@@ -55,10 +55,18 @@ let imgScale   = 1.0;
 let imgOffsetX = 0.0;
 let imgOffsetY = 0.0;
 
+// Frame-effective transform values — LFO'd once per frame, read per-pixel by applyImgTransform
+let _imgScaleEff   = imgScale;
+let _imgOffsetXEff = imgOffsetX;
+let _imgOffsetYEff = imgOffsetY;
+
 // Image pixel grid
 let imgDrawMode   = 9;    // 0=off, 1-9=style
 let imgCols       = 80;   // grid columns
 let imageStrength = 1.0;  // grid opacity 0-1
+let imgFactorX    = 0.5;  // per-cell modulation factor X (was mouseX-driven)
+let imgFactorY    = 0.5;  // per-cell modulation factor Y (was mouseY-driven)
+let imgBlendMode  = "normal"; // p5 blendMode() for the image grid composite
 
 // Big Four
 let saturation    = 1.0;
@@ -90,6 +98,9 @@ let colorFilter = {
   blendMode: "normal"
 };
 
+// Vignette overlay
+let vignette = { enabled: false, amount: 0.4, softness: 0.5, color: { r: 0, g: 0, b: 0 } };
+
 // LFOs
 let lfos = {
   freqX:        { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
@@ -108,8 +119,41 @@ let lfos = {
   textSize:         { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
   textBlend:        { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
   connectionRadius: { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
-  connectionRamp:   { enabled: false, rate: 0.5, depth: 0.5, phase: 0 }
+  connectionRamp:   { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  imgScale:      { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  imgOffsetX:    { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  imgOffsetY:    { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  imageStrength: { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  imgCols:       { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  imgFactorX:    { enabled: false, rate: 0.5, depth: 0.5, phase: 0 },
+  imgFactorY:    { enabled: false, rate: 0.5, depth: 0.5, phase: 0 }
 };
+
+// =============================================================================
+// AUDIO INPUT (mic-driven modulation — additive second modulator on the LFO slot)
+// =============================================================================
+// audioLevel is a single shared 0..1 value updated once per frame at the top of
+// draw() (like _fr). When a param's mic toggle (lfos[key].audio) is on, an audio
+// term `audioLevel * depth * range` is ADDED on top of its already-resolved
+// LFO/base value — the mic stacks with the LFO, it does not replace it.
+// The mic stream/permission is NEVER serialized; only audioIn settings persist
+// and the user must re-arm by gesture after load.
+let audioIn    = { source: 'amplitude', band: 0, gain: 1.0, smoothing: 0.6 };
+let audioLevel = 0;
+let _mic = null, _amp = null, _fft = null, _micArmed = false;
+
+// LFO-capable params that also expose a mic toggle. Colors (bgColor/lineColor)
+// are excluded: they resolve via applyColorLfo, not the scalar applyAudioMod path.
+const AUDIO_KEYS = [
+  "freqX","freqY","modFreqX","modFreqY","phase","speed",
+  "ampX","ampY","stepSize","strokeWeight","trail",
+  "connectionRadius","connectionRamp","textSize","textBlend",
+  "imgScale","imgOffsetX","imgOffsetY","imageStrength","imgCols",
+  "imgFactorX","imgFactorY"
+];
+// Per-param mic flag lives alongside the LFO state so the lfos deep-copy carries
+// it through captureState/restoreState/settings automatically.
+AUDIO_KEYS.forEach(function(k) { if (lfos[k]) lfos[k].audio = false; });
 
 let paramRanges;
 
@@ -126,7 +170,9 @@ const SLIDER_DEFAULTS = {
   filterOpacity: 0.3,
   imgScaleSlider: 1,  imgOffsetXSlider: 0, imgOffsetYSlider: 0,
   imgColsSlider: 80,  imageStrengthSlider: 1,
-  textSizeSlider: 200, textBlendSlider: 0
+  imgFactorXSlider: 0.5, imgFactorYSlider: 0.5,
+  textSizeSlider: 200, textBlendSlider: 0,
+  audioGainSlider: 1, audioSmoothingSlider: 0.6, audioBand: 0
 };
 
 const PRESETS = {
@@ -330,17 +376,25 @@ function captureState() {
                        enabled: colorFilter.enabled,
                        opacity: colorFilter.opacity,
                        blendMode: colorFilter.blendMode },
+    vignette:        { enabled: vignette.enabled,
+                       amount: vignette.amount,
+                       softness: vignette.softness,
+                       color: Object.assign({}, vignette.color) },
     glowEnabled,
     glowSize,
     glowIntensity,
     imgScale,
     imgOffsetX,
     imgOffsetY,
+    imgFactorX,
+    imgFactorY,
+    imgBlendMode,
     saturation,
     brightness,
     contrastLevel,
     showImage,
     transparentBg,
+    audioIn: Object.assign({}, audioIn),
     textMode: Object.assign({}, textMode)
   };
 }
@@ -357,6 +411,16 @@ function applyColorFilter() {
   div.style.display    = "block";
   div.style.background = `rgba(${r},${g},${b},${colorFilter.opacity})`;
   div.style.mixBlendMode = colorFilter.blendMode;
+}
+
+function applyVignette() {
+  let div = document.getElementById("vignette");
+  if (!vignette.enabled) { div.style.display = "none"; return; }
+  let { r, g, b } = vignette.color;
+  let inner = Math.round((1 - vignette.softness) * 100);
+  div.style.display    = "block";
+  div.style.background  =
+    `radial-gradient(ellipse at center, rgba(${r},${g},${b},0) ${inner}%, rgba(${r},${g},${b},${vignette.amount}) 100%)`;
 }
 
 function pushHistory() {
@@ -425,21 +489,44 @@ function restoreState(snap) {
   // LFOs
   ["freqX","freqY","modFreqX","modFreqY","phase","speed",
    "ampX","ampY","stepSize","strokeWeight","trail","bgColor","lineColor",
-   "textSize","textBlend","connectionRadius","connectionRamp"].forEach(key => {
+   "textSize","textBlend","connectionRadius","connectionRamp",
+   "imgScale","imgOffsetX","imgOffsetY","imageStrength","imgCols",
+   "imgFactorX","imgFactorY"].forEach(key => {
     let lfo = lfos[key];
     _setChk(key+"LfoToggle", lfo.enabled);
-    _setEl(key+"LfoRate",  Math.log10(lfo.rate));  _setTxt(key+"LfoRateValue",  lfo.rate.toFixed(3));
+    // guard log10 against a corrupt rate:0 → -Infinity (per deferred-work.md)
+    _setEl(key+"LfoRate",  Math.log10(Math.max(lfo.rate, 0.001)));  _setTxt(key+"LfoRateValue",  lfo.rate.toFixed(3));
     _setEl(key+"LfoDepth", lfo.depth); _setTxt(key+"LfoDepthValue", lfo.depth.toFixed(2));
     updateLfoUi(key);
+  });
+
+  // Audio In settings — the mic itself stays un-armed; user re-arms by gesture.
+  if (snap.audioIn) Object.assign(audioIn, snap.audioIn);
+  _setEl("audioSource",          audioIn.source);
+  _setEl("audioBand",            audioIn.band);      _setTxt("audioBandValue",      audioIn.band);
+  _setEl("audioGainSlider",      audioIn.gain);      _setTxt("audioGainValue",      audioIn.gain.toFixed(2));
+  _setEl("audioSmoothingSlider", audioIn.smoothing); _setTxt("audioSmoothingValue", audioIn.smoothing.toFixed(2));
+  let _bandRow = document.getElementById("audioBandRow");
+  if (_bandRow) _bandRow.style.display = audioIn.source === 'fft' ? 'flex' : 'none';
+  // Per-param mic flags (already copied onto lfos via the snap.lfos loop above)
+  AUDIO_KEYS.forEach(function(key) {
+    _setChk(key + "AudioToggle", !!(lfos[key] && lfos[key].audio));
   });
 
   // Image transform
   imgScale   = snap.imgScale;
   imgOffsetX = snap.imgOffsetX;
   imgOffsetY = snap.imgOffsetY;
+  imgFactorX = snap.imgFactorX != null ? snap.imgFactorX : 0.5;
+  imgFactorY = snap.imgFactorY != null ? snap.imgFactorY : 0.5;
+  imgBlendMode = snap.imgBlendMode || "normal";
+  _imgScaleEff = imgScale; _imgOffsetXEff = imgOffsetX; _imgOffsetYEff = imgOffsetY;
   _setEl("imgScaleSlider",   imgScale);   _setTxt("imgScaleValue",   imgScale.toFixed(2));
   _setEl("imgOffsetXSlider", imgOffsetX); _setTxt("imgOffsetXValue", imgOffsetX.toFixed(2));
   _setEl("imgOffsetYSlider", imgOffsetY); _setTxt("imgOffsetYValue", imgOffsetY.toFixed(2));
+  _setEl("imgFactorXSlider", imgFactorX); _setTxt("imgFactorXValue", imgFactorX.toFixed(2));
+  _setEl("imgFactorYSlider", imgFactorY); _setTxt("imgFactorYValue", imgFactorY.toFixed(2));
+  _setEl("imgBlendMode",     imgBlendMode);
   showImage = snap.showImage;
   let _hBtn = document.getElementById("hidePhotoBtn");
   if (_hBtn) _hBtn.textContent = showImage ? "Hide photo" : "Show photo";
@@ -465,6 +552,17 @@ function restoreState(snap) {
   _setEl("filterBlendMode",  colorFilter.blendMode);
   applyColorFilter();
 
+  // Vignette
+  vignette.enabled  = snap.vignette ? snap.vignette.enabled  : false;
+  vignette.amount   = snap.vignette ? snap.vignette.amount   : 0.4;
+  vignette.softness = snap.vignette ? snap.vignette.softness : 0.5;
+  Object.assign(vignette.color, (snap.vignette && snap.vignette.color) || { r: 0, g: 0, b: 0 });
+  _setChk("vignetteEnabled",       vignette.enabled);
+  _setEl("vignetteAmountSlider",   vignette.amount);   _setTxt("vignetteAmountValue",   vignette.amount.toFixed(2));
+  _setEl("vignetteSoftnessSlider", vignette.softness); _setTxt("vignetteSoftnessValue", vignette.softness.toFixed(2));
+  _setEl("vignetteColor",          rgbToHex(vignette.color.r, vignette.color.g, vignette.color.b));
+  applyVignette();
+
   // Text blend
   if (snap.textMode) {
     Object.assign(textMode, snap.textMode);
@@ -477,7 +575,7 @@ function restoreState(snap) {
   }
 
   // Sync color swatches and curve chips that don't auto-update via _setEl
-  [['lineColor','lineColorSwatch'],['bgColor','bgColorSwatch'],['filterColor','filterColorSwatch']].forEach(function(pair) {
+  [['lineColor','lineColorSwatch'],['bgColor','bgColorSwatch'],['filterColor','filterColorSwatch'],['vignetteColor','vignetteColorSwatch']].forEach(function(pair) {
     var inp = document.getElementById(pair[0]);
     var sw  = document.getElementById(pair[1]);
     if (inp && sw) sw.style.background = inp.value;
@@ -548,9 +646,13 @@ function bindLfo(key) {
 
 function applyLfo(key) {
   let lfo=lfos[key], range=paramRanges[key];
-  if(!lfo.enabled) return params[key];
-  lfo.phase+=(TWO_PI*lfo.rate)/_fr;
-  return constrain(params[key]+sin(lfo.phase)*lfo.depth*(range.max-range.min)/2, range.min, range.max);
+  let value = params[key];
+  if (lfo.enabled) {
+    lfo.phase+=(TWO_PI*lfo.rate)/_fr;
+    value = constrain(params[key]+sin(lfo.phase)*lfo.depth*(range.max-range.min)/2, range.min, range.max);
+  }
+  if (lfo.audio) value = applyAudioMod(key, value, range);
+  return value;
 }
 
 function applyColorLfo(key, baseColor) {
@@ -567,20 +669,148 @@ function applyTextLfo(key) {
   let lfo   = lfos[key];
   let range = _textLfoRanges[key];
   let base  = key === 'textSize' ? textMode.size : textMode.blend;
-  if (!lfo || !lfo.enabled) return base;
-  lfo.phase += (TWO_PI * lfo.rate) / _fr;
-  return constrain(base + sin(lfo.phase) * lfo.depth * (range.max - range.min) / 2, range.min, range.max);
+  if (!lfo) return base;
+  let value = base;
+  if (lfo.enabled) {
+    lfo.phase += (TWO_PI * lfo.rate) / _fr;
+    value = constrain(base + sin(lfo.phase) * lfo.depth * (range.max - range.min) / 2, range.min, range.max);
+  }
+  if (lfo.audio) value = applyAudioMod(key, value, range);
+  return value;
+}
+
+// Image params live outside params/paramRanges (standalone lets), so they get
+// their own range table + applyImgLfo, mirroring the textSize/textBlend pattern.
+const _imgLfoRanges = {
+  imgScale:      { min: 0.1,   max: 8   },
+  imgOffsetX:    { min: -0.5,  max: 0.5 },
+  imgOffsetY:    { min: -0.5,  max: 0.5 },
+  imageStrength: { min: 0,     max: 1   },
+  imgCols:       { min: 20,    max: 200 },
+  imgFactorX:    { min: 0.05,  max: 1   },
+  imgFactorY:    { min: 0.05,  max: 1   }
+};
+
+function applyImgLfo(key, base) {
+  let lfo   = lfos[key];
+  let range = _imgLfoRanges[key];
+  if (!lfo) return base;
+  let value = base;
+  if (lfo.enabled) {
+    lfo.phase += (TWO_PI * lfo.rate) / _fr;
+    value = constrain(base + sin(lfo.phase) * lfo.depth * (range.max - range.min) / 2, range.min, range.max);
+  }
+  if (lfo.audio) value = applyAudioMod(key, value, range);
+  return value;
+}
+
+// Map an imgBlendMode string to its p5 blend constant. Anything unknown → BLEND.
+function _p5BlendOf(name) {
+  switch (name) {
+    case 'multiply':   return MULTIPLY;
+    case 'screen':     return SCREEN;
+    case 'overlay':    return OVERLAY;
+    case 'darkest':    return DARKEST;
+    case 'lightest':   return LIGHTEST;
+    case 'difference': return DIFFERENCE;
+    case 'exclusion':  return EXCLUSION;
+    case 'add':        return ADD;
+    case 'burn':       return BURN;
+    case 'dodge':      return DODGE;
+    default:           return BLEND;
+  }
+}
+
+// =============================================================================
+// AUDIO INPUT HELPERS
+// =============================================================================
+
+function _setAudioStatus(msg, live) {
+  let el = document.getElementById('audioStatus');
+  if (el) { el.textContent = msg; el.classList.toggle('live', !!live); }
+}
+
+// Lazily inject p5.sound. It is NOT loaded in index.html because its AudioWorklet
+// module fails to load over file://, and that error aborts p5 startup before
+// setup() runs. Loading it here (after p5 is already running, from a user gesture)
+// keeps the canvas alive on file:// and only pulls in sound when the mic is armed.
+let _p5SoundPromise = null;
+function _ensureP5Sound() {
+  if (typeof p5 !== 'undefined' && p5.AudioIn) return Promise.resolve();
+  if (_p5SoundPromise) return _p5SoundPromise;
+  _p5SoundPromise = new Promise(function(resolve, reject) {
+    let s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js';
+    s.onload  = function() { resolve(); };
+    s.onerror = function() { _p5SoundPromise = null; reject(new Error('p5.sound failed to load')); };
+    document.head.appendChild(s);
+  });
+  return _p5SoundPromise;
+}
+
+// Arm the mic. MUST be called from a user gesture (Enable-Mic click) — never on
+// load. getUserMedia fails on file:// in most browsers; we catch and fail soft.
+async function armMic() {
+  let btn = document.getElementById('enableMicBtn');
+  try {
+    await _ensureP5Sound();
+    if (typeof userStartAudio === 'function') await userStartAudio();
+    _mic = new p5.AudioIn();
+    // Wrap start() so a getUserMedia denial/rejection lands in our catch.
+    await new Promise(function(resolve, reject) { _mic.start(resolve, reject); });
+    _amp = new p5.Amplitude(); _amp.setInput(_mic);
+    _fft = new p5.FFT();        _fft.setInput(_mic);
+    _micArmed = true;
+    if (btn) btn.textContent = 'Mic on';
+    _setAudioStatus('Mic live', true);
+  } catch (e) {
+    _micArmed = false;
+    audioLevel = 0;
+    if (_mic && _mic.stop) { try { _mic.stop(); } catch (_e) {} }
+    if (btn) btn.textContent = 'Enable Mic';
+    _setAudioStatus('Mic unavailable — needs https (deployed site or localhost), not file://', false);
+    console.warn('armMic failed:', e);
+  }
+}
+
+// Read one shared audio level per frame (called at the top of draw, like _fr).
+// Until the mic is armed audioLevel stays 0, so the render loop never blocks.
+function updateAudioLevel() {
+  if (!_micArmed) { audioLevel = 0; return; }
+  let raw;
+  if (audioIn.source === 'amplitude') {
+    raw = _amp.getLevel();
+  } else {
+    let spectrum = _fft.analyze();
+    let i = Math.min(audioIn.band, spectrum.length - 1);
+    raw = spectrum[i] / 255;
+  }
+  // gain scales the raw level; smoothing lerps frame-to-frame to kill jitter
+  audioLevel = lerp(audioLevel, constrain(raw * audioIn.gain, 0, 1), 1 - audioIn.smoothing);
+}
+
+function _updateAudioMeter() {
+  let fill = document.getElementById('audioMeterFill');
+  if (fill) fill.style.width = (audioLevel * 100).toFixed(1) + '%';
+}
+
+// Add the audio term on top of an already-resolved LFO/base value. Reuses the
+// param's LFO depth as sensitivity; audioLevel already includes the global gain.
+function applyAudioMod(key, value, range) {
+  return constrain(value + audioLevel * lfos[key].depth * (range.max - range.min), range.min, range.max);
 }
 
 // =============================================================================
 // IMAGE HELPERS
 // =============================================================================
 
-// Map canvas-normalised coords through scale + offset before hitting the image
+// Map canvas-normalised coords through scale + offset before hitting the image.
+// Reads the frame-effective globals (set once per frame in the image draw fns)
+// so an LFO advances its phase once per frame, not once per pixel-grid cell.
 function applyImgTransform(nx, ny) {
   return [
-    (nx - 0.5) / imgScale + 0.5 + imgOffsetX,
-    (ny - 0.5) / imgScale + 0.5 + imgOffsetY
+    (nx - 0.5) / _imgScaleEff + 0.5 + _imgOffsetXEff,
+    (ny - 0.5) / _imgScaleEff + 0.5 + _imgOffsetYEff
   ];
 }
 
@@ -680,34 +910,49 @@ function _pixelGridCell(gx, gy, cols, rows, tileW, tileH, col, alpha, factor1, f
   }
 }
 
-// Photo mode: full-canvas pixel mapping, mouse X/Y drive the two modulation factors.
+// Compute the frame-effective image values once per frame: resolve each
+// LFO-able image param (Scale/Offset/Opacity/Resolution/Factor X/Y) and stash
+// the transform values in the _img*Eff globals that applyImgTransform reads.
+// Returns the per-cell render inputs (cols, alpha, factors).
+function _resolveImgFrame() {
+  _imgScaleEff   = applyImgLfo('imgScale',   imgScale);
+  _imgOffsetXEff = applyImgLfo('imgOffsetX', imgOffsetX);
+  _imgOffsetYEff = applyImgLfo('imgOffsetY', imgOffsetY);
+  let strength = applyImgLfo('imageStrength', imageStrength);
+  let cols     = Math.round(applyImgLfo('imgCols', imgCols));
+  let fx       = applyImgLfo('imgFactorX', imgFactorX);
+  let fy       = applyImgLfo('imgFactorY', imgFactorY);
+  return { cols, alpha: strength * 255, fx, fy };
+}
+
+// Photo mode: full-canvas pixel mapping. The two per-cell modulation factors
+// are user-controlled (Factor X/Y), LFO-able — no longer mouse-driven.
 function drawPhotoMode() {
   if (!imgPixels || imgDrawMode === 0) return;
 
-  let cols  = imgCols;
+  let { cols, alpha, fx, fy } = _resolveImgFrame();
   let rows  = Math.round(cols * height / width);
   let tileW = width  / cols;
   let tileH = height / rows;
-
-  let factor1 = map(mouseX, 0, width,  0.05, 1.0);
-  let factor2 = map(mouseY, 0, height, 0.05, 1.0);
   let col   = lineColor;
-  let alpha = imageStrength * 255;
 
   push();
   for (let gx = 0; gx < cols; gx++) {
     for (let gy = 0; gy < rows; gy++) {
-      _pixelGridCell(gx, gy, cols, rows, tileW, tileH, col, alpha, factor1, factor2);
+      _pixelGridCell(gx, gy, cols, rows, tileW, tileH, col, alpha, fx, fy);
     }
   }
   pop();
 }
 
-// Overlay grid drawn on top of lissajous/mesh, animated by phaseAcc.
+// Overlay grid drawn on top of lissajous/mesh. Uses the same frame-effective
+// image values (Scale/Offset/Resolution/Opacity LFOs apply here too); the two
+// per-cell factors keep their phaseAcc-driven shimmer.
 function drawImageGrid(col, alpha, phaseAcc) {
   if (!imgPixels || imgDrawMode === 0) return;
 
-  let cols  = imgCols;
+  let frame = _resolveImgFrame();
+  let cols  = frame.cols;
   let rows  = Math.round(cols * height / width);
   let tileW = width  / cols;
   let tileH = height / rows;
@@ -718,7 +963,7 @@ function drawImageGrid(col, alpha, phaseAcc) {
   push();
   for (let gx = 0; gx < cols; gx++) {
     for (let gy = 0; gy < rows; gy++) {
-      _pixelGridCell(gx, gy, cols, rows, tileW, tileH, col, alpha, factor1, factor2);
+      _pixelGridCell(gx, gy, cols, rows, tileW, tileH, col, frame.alpha, factor1, factor2);
     }
   }
   pop();
@@ -1157,6 +1402,25 @@ function setup() {
   });
   document.getElementById("imgOffsetYSlider").addEventListener("change", pushHistory);
 
+  // Per-cell modulation factors (replaced the old mouse X/Y reads)
+  document.getElementById("imgFactorXSlider").addEventListener("input", function(){
+    imgFactorX = Number(this.value);
+    document.getElementById("imgFactorXValue").textContent = Number(this.value).toFixed(2);
+    meshDirty = true;
+  });
+  document.getElementById("imgFactorXSlider").addEventListener("change", pushHistory);
+  document.getElementById("imgFactorYSlider").addEventListener("input", function(){
+    imgFactorY = Number(this.value);
+    document.getElementById("imgFactorYValue").textContent = Number(this.value).toFixed(2);
+    meshDirty = true;
+  });
+  document.getElementById("imgFactorYSlider").addEventListener("change", pushHistory);
+
+  // Image grid blend mode
+  document.getElementById("imgBlendMode").addEventListener("change", function(){
+    imgBlendMode = this.value; meshDirty = true; pushHistory();
+  });
+
   // Image pixel grid
   document.getElementById("imgDrawMode").addEventListener("change", function(){
     imgDrawMode=Number(this.value); meshDirty=true; pushHistory();
@@ -1200,7 +1464,9 @@ function setup() {
   ["freqX","freqY","modFreqX","modFreqY","phase","speed",
    "ampX","ampY","stepSize","strokeWeight","trail",
    "bgColor","lineColor","textSize","textBlend",
-   "connectionRadius","connectionRamp"].forEach(bindLfo);
+   "connectionRadius","connectionRamp",
+   "imgScale","imgOffsetX","imgOffsetY","imageStrength","imgCols",
+   "imgFactorX","imgFactorY"].forEach(bindLfo);
 
   // Glow
   document.getElementById("glowEnabled").addEventListener("change", function(){
@@ -1235,6 +1501,61 @@ function setup() {
   document.getElementById("filterOpacity").addEventListener("change", pushHistory);
   document.getElementById("filterBlendMode").addEventListener("change", function(){
     colorFilter.blendMode = this.value; applyColorFilter(); pushHistory();
+  });
+
+  // Vignette
+  document.getElementById("vignetteEnabled").addEventListener("change", function(){
+    vignette.enabled = this.checked; applyVignette(); pushHistory();
+  });
+  document.getElementById("vignetteColor").addEventListener("input", function(){
+    vignette.color = hexToRgb(this.value); applyVignette();
+  });
+  document.getElementById("vignetteColor").addEventListener("change", pushHistory);
+  document.getElementById("vignetteAmountSlider").addEventListener("input", function(){
+    vignette.amount = Number(this.value);
+    document.getElementById("vignetteAmountValue").textContent = Number(this.value).toFixed(2);
+    applyVignette();
+  });
+  document.getElementById("vignetteAmountSlider").addEventListener("change", pushHistory);
+  document.getElementById("vignetteSoftnessSlider").addEventListener("input", function(){
+    vignette.softness = Number(this.value);
+    document.getElementById("vignetteSoftnessValue").textContent = Number(this.value).toFixed(2);
+    applyVignette();
+  });
+  document.getElementById("vignetteSoftnessSlider").addEventListener("change", pushHistory);
+
+  // Audio In (mic) — armed only by explicit gesture (click), never on load
+  document.getElementById("enableMicBtn").addEventListener("click", armMic);
+  document.getElementById("audioSource").addEventListener("change", function(){
+    audioIn.source = this.value;
+    let row = document.getElementById("audioBandRow");
+    if (row) row.style.display = this.value === 'fft' ? 'flex' : 'none';
+    pushHistory();
+  });
+  document.getElementById("audioBand").addEventListener("input", function(){
+    audioIn.band = Number(this.value);
+    document.getElementById("audioBandValue").textContent = this.value;
+  });
+  document.getElementById("audioBand").addEventListener("change", pushHistory);
+  document.getElementById("audioGainSlider").addEventListener("input", function(){
+    audioIn.gain = Number(this.value);
+    document.getElementById("audioGainValue").textContent = Number(this.value).toFixed(2);
+  });
+  document.getElementById("audioGainSlider").addEventListener("change", pushHistory);
+  document.getElementById("audioSmoothingSlider").addEventListener("input", function(){
+    audioIn.smoothing = Number(this.value);
+    document.getElementById("audioSmoothingValue").textContent = Number(this.value).toFixed(2);
+  });
+  document.getElementById("audioSmoothingSlider").addEventListener("change", pushHistory);
+
+  // Per-param mic toggles — additive audio term, independent of the LFO toggle
+  AUDIO_KEYS.forEach(function(key){
+    let el = document.getElementById(key + "AudioToggle");
+    if (!el) return;
+    el.addEventListener("change", function(){
+      lfos[key].audio = this.checked;
+      pushHistory();
+    });
   });
 
   // Undo / redo keyboard shortcut
@@ -1399,6 +1720,17 @@ function setup() {
     _panel.classList.toggle('hidden');
   });
 
+  // ── NEW UI: utility panel collapse toggle (top-left peer) ─
+  var _utilityPanel    = document.getElementById('utility-panel');
+  var _utilityCollapse = document.getElementById('utility-collapse');
+  if (_utilityCollapse && _utilityPanel) {
+    _utilityCollapse.addEventListener('click', function() {
+      var collapsed = _utilityPanel.classList.toggle('collapsed');
+      _utilityCollapse.textContent = collapsed ? '+' : '−';
+      _utilityCollapse.title = collapsed ? 'Expand' : 'Collapse';
+    });
+  }
+
   // ── NEW UI: bottom nav — section drawer ───────────────────
   var _drawer      = document.getElementById('section-drawer');
   var _activeNav   = null;
@@ -1437,6 +1769,15 @@ function setup() {
     });
   });
 
+  document.addEventListener('click', function(e) {
+    if (_drawer.classList.contains('hidden')) return;
+    if (_drawer.contains(e.target)) return;
+    if (e.target.closest('.nav-pill')) return;
+    _drawer.classList.add('hidden');
+    document.querySelectorAll('.nav-pill').forEach(function(b) { b.classList.remove('active'); });
+    _activeNav = null;
+  });
+
   // ── NEW UI: pill slider --pct ─────────────────────────────
   document.querySelectorAll('.slider-pill').forEach(function(pill) {
     var slider = pill.querySelector('input[type="range"]');
@@ -1469,7 +1810,7 @@ function setup() {
   });
 
   // ── NEW UI: color swatch live sync ───────────────────────
-  [['lineColor','lineColorSwatch'],['bgColor','bgColorSwatch'],['filterColor','filterColorSwatch']].forEach(function(pair) {
+  [['lineColor','lineColorSwatch'],['bgColor','bgColorSwatch'],['filterColor','filterColorSwatch'],['vignetteColor','vignetteColorSwatch']].forEach(function(pair) {
     var inp = document.getElementById(pair[0]);
     var sw  = document.getElementById(pair[1]);
     if (!inp || !sw) return;
@@ -1489,7 +1830,7 @@ function setup() {
     // 10 shape randomizations: fast start, slow end (quadratic ease-out spacing)
     // Colors stay white throughout; only shape/params change
     var count = 10;
-    var duration = 3200; // ms; last shape settles 300ms before fade begins
+    var duration = 0; // ms; last shape settles 300ms before fade begins
     for (var i = 0; i < count; i++) {
       (function(idx) {
         var t = duration * Math.pow(idx / (count - 1), 2);
@@ -1530,11 +1871,15 @@ function setup() {
 
 function draw() {
   _fr = frameRate() || 60;
+  updateAudioLevel();   // shared mic level for this frame (0 until armed)
+  _updateAudioMeter();
   updateVideoPixels();
 
   if (showImage && (uploadedImg || isVideoSource)) {
     if (transparentBg) clear(); else background(bgColor.r, bgColor.g, bgColor.b);
+    blendMode(_p5BlendOf(imgBlendMode));
     drawPhotoMode();
+    blendMode(BLEND); // restore before next frame — blendMode is stateful
     // photo mode not replicated in output window — leave output at last rendered state
     return;
   }
@@ -1590,7 +1935,11 @@ function draw() {
         background(aBg.r, aBg.g, aBg.b, aTrail);
       }
     }
-    if (imgDrawMode > 0 && imgPixels) drawImageGrid(mCol, imageStrength * 255, phaseAccumulator);
+    if (imgDrawMode > 0 && imgPixels) {
+      blendMode(_p5BlendOf(imgBlendMode));
+      drawImageGrid(mCol, imageStrength * 255, phaseAccumulator);
+      blendMode(BLEND);
+    }
     mirrorToOutput({
       type:'state', mode:'mesh', curveShape, showCurve,
       freqX:aFreqX, freqY:aFreqY, modFreqX:aModFX, modFreqY:aModFY,
@@ -1600,7 +1949,9 @@ function draw() {
       bgColor:aBg, lineColor:mCol, transparentBg,
       brightness, contrastLevel,
       cf: colorFilter.enabled ? { r:colorFilter.color.r, g:colorFilter.color.g,
-            b:colorFilter.color.b, o:colorFilter.opacity, m:colorFilter.blendMode } : null
+            b:colorFilter.color.b, o:colorFilter.opacity, m:colorFilter.blendMode } : null,
+      vg: vignette.enabled ? { r:vignette.color.r, g:vignette.color.g,
+            b:vignette.color.b, a:vignette.amount, s:vignette.softness } : null
     });
     return;
   }
@@ -1660,7 +2011,9 @@ function draw() {
   }
 
   if (imgDrawMode > 0 && imgPixels) {
+    blendMode(_p5BlendOf(imgBlendMode));
     drawImageGrid(aLine, imageStrength * 255, phaseAccumulator);
+    blendMode(BLEND);
   }
 
   mirrorToOutput({
@@ -1672,7 +2025,9 @@ function draw() {
     glowEnabled, glowSize, glowIntensity, transparentBg,
     brightness, contrastLevel,
     cf: colorFilter.enabled ? { r:colorFilter.color.r, g:colorFilter.color.g,
-          b:colorFilter.color.b, o:colorFilter.opacity, m:colorFilter.blendMode } : null
+          b:colorFilter.color.b, o:colorFilter.opacity, m:colorFilter.blendMode } : null,
+    vg: vignette.enabled ? { r:vignette.color.r, g:vignette.color.g,
+          b:vignette.color.b, a:vignette.amount, s:vignette.softness } : null
   });
 }
 
@@ -1690,6 +2045,10 @@ function mirrorToOutput(state) {
         cf: colorFilter.enabled
           ? { r: colorFilter.color.r, g: colorFilter.color.g,
               b: colorFilter.color.b, o: colorFilter.opacity, m: colorFilter.blendMode }
+          : null,
+        vg: vignette.enabled
+          ? { r: vignette.color.r, g: vignette.color.g,
+              b: vignette.color.b, a: vignette.amount, s: vignette.softness }
           : null
       });
     } catch(e) {}

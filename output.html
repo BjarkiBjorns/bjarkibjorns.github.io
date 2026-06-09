@@ -12,15 +12,23 @@
       inset: 0;
       pointer-events: none;
     }
+    #vg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
   <canvas id="out"></canvas>
   <div id="cf"></div>
+  <div id="vg"></div>
   <script>
     var canvas = document.getElementById('out');
     var ctx    = canvas.getContext('2d');
     var cf     = document.getElementById('cf');
+    var vg     = document.getElementById('vg');
 
     function resize() {
       canvas.width  = window.innerWidth;
@@ -69,6 +77,14 @@
             cf.style.mixBlendMode = d.cf.m || 'normal';
           } else {
             cf.style.display = 'none';
+          }
+          if (d.vg) {
+            var inner = Math.round((1 - d.vg.s) * 100);
+            vg.style.display    = 'block';
+            vg.style.background  =
+              'radial-gradient(ellipse at center, rgba('+d.vg.r+','+d.vg.g+','+d.vg.b+',0) '+inner+'%, rgba('+d.vg.r+','+d.vg.g+','+d.vg.b+','+d.vg.a+') 100%)';
+          } else {
+            vg.style.display = 'none';
           }
         }
       });
