@@ -79,11 +79,29 @@ body {
   letter-spacing: 0.08em;
 }
 
+.welcome-body {
+  max-width: 540px;
+  margin-top: 20px;
+  padding: 0 24px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #ffffff;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
 .welcome-sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.7);
   letter-spacing: 0.05em;
-  margin-top: 8px;
+  margin-top: 18px;
+}
+
+.welcome-hint {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.12em;
+  margin-top: 20px;
 }
 
 /* ── BOTTOM BAR ─────────────────────────────────────────── */

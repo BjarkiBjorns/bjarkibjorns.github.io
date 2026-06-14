@@ -2039,14 +2039,28 @@ function setup() {
       })(i);
     }
     var wt = document.getElementById('welcome-text');
-    setTimeout(function() {
+
+    // Dismiss the welcome screen: fade out, then remove. Runs at most once,
+    // triggered either by the 20s timer or by an early click anywhere.
+    var dismissed = false;
+    function dismissWelcome() {
+      if (dismissed) return;
+      dismissed = true;
+      clearTimeout(autoTimer);
+      ws.removeEventListener('click', dismissWelcome);
       ws.style.opacity = '0';
       if (wt) wt.style.opacity = '0';
       setTimeout(function() {
         ws.style.display = 'none';
         if (wt) wt.style.display = 'none';
       }, 820);
-    }, 3500);
+    }
+
+    // welcome-text sits above the screen but has pointer-events:none, so
+    // clicks anywhere land on the full-screen welcome-screen overlay.
+    ws.style.cursor = 'pointer';
+    ws.addEventListener('click', dismissWelcome);
+    var autoTimer = setTimeout(dismissWelcome, 20000);
   })();
 
   // ── NEW UI: toggle button image fallback ──────────────────
