@@ -2042,25 +2042,70 @@ function setup() {
 
     // Dismiss the welcome screen: fade out, then remove. Runs at most once,
     // triggered either by the 20s timer or by an early click anywhere.
+    // Animated cursor: CSS cursors can't animate a GIF, so hide the real
+    // cursor over the welcome screen and follow the mouse with a DOM image.
+    ws.style.cursor = 'none';
+    var cursorEl = document.createElement('img');
+    cursorEl.src = 'cursors/cursor-welcome.gif';
+    cursorEl.alt = '';
+    cursorEl.style.cssText =
+      'position:fixed;left:0;top:0;width:128px;height:128px;' +
+      'transform:translate(-64px,-64px);z-index:20002;pointer-events:none;' +
+      'display:none;transition:opacity 0.8s ease;';
+    document.body.appendChild(cursorEl);
+    function moveCursor(e) {
+      cursorEl.style.display = 'block';
+      cursorEl.style.left = e.clientX + 'px';
+      cursorEl.style.top = e.clientY + 'px';
+    }
+    ws.addEventListener('mousemove', moveCursor);
+
     var dismissed = false;
     function dismissWelcome() {
       if (dismissed) return;
       dismissed = true;
       clearTimeout(autoTimer);
       ws.removeEventListener('click', dismissWelcome);
+      ws.removeEventListener('mousemove', moveCursor);
       ws.style.opacity = '0';
       if (wt) wt.style.opacity = '0';
+      cursorEl.style.opacity = '0';
       setTimeout(function() {
         ws.style.display = 'none';
         if (wt) wt.style.display = 'none';
+        if (cursorEl.parentNode) cursorEl.parentNode.removeChild(cursorEl);
       }, 820);
     }
 
     // welcome-text sits above the screen but has pointer-events:none, so
     // clicks anywhere land on the full-screen welcome-screen overlay.
-    ws.style.cursor = 'pointer';
     ws.addEventListener('click', dismissWelcome);
     var autoTimer = setTimeout(dismissWelcome, 20000);
+  })();
+
+  // ── Animated loading cursor on the bjarkibjorns.com link ──
+  // CSS cursors can't animate a GIF, so hide the cursor while hovering the
+  // link and follow the mouse with a live <img> of the animated gif.
+  (function() {
+    var link = document.querySelector('.welcome-link');
+    if (!link) return;
+    link.style.cursor = 'none';
+    var cursorEl = document.createElement('img');
+    cursorEl.src = 'cursors/clickcursor.webp';
+    cursorEl.alt = '';
+    cursorEl.style.cssText =
+      'position:fixed;left:0;top:0;width:100px;height:100px;' +
+      'transform:translate(-50px,-50px);z-index:30000;pointer-events:none;' +
+      'display:none;';
+    document.body.appendChild(cursorEl);
+    link.addEventListener('mousemove', function(e) {
+      cursorEl.style.display = 'block';
+      cursorEl.style.left = e.clientX + 'px';
+      cursorEl.style.top = e.clientY + 'px';
+    });
+    link.addEventListener('mouseleave', function() {
+      cursorEl.style.display = 'none';
+    });
   })();
 
   // ── NEW UI: toggle button image fallback ──────────────────
