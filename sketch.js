@@ -1312,6 +1312,79 @@ function savePNG() {
   saveCanvas('lissajous_' + makeTimestamp(), 'png');
 }
 
+// Canvas video capture via MediaRecorder. Records the raw p5 canvas pixels;
+// CSS-applied effects (brightness/contrast/colorFilter overlay) are not baked
+// in since they live on #canvas-container, not the canvas itself.
+let _mediaRecorder = null;
+let _recChunks     = [];
+
+function _pickVideoMime() {
+  let candidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  for (let m of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function isRecording() {
+  return _mediaRecorder && _mediaRecorder.state === 'recording';
+}
+
+function toggleVideoRecording() {
+  isRecording() ? stopVideoRecording() : startVideoRecording();
+}
+
+function startVideoRecording() {
+  if (isRecording()) return;
+  if (typeof MediaRecorder === 'undefined') {
+    alert('Video recording is not supported in this browser.');
+    return;
+  }
+
+  let canvasEl = document.querySelector('#canvas-container canvas');
+  if (!canvasEl || typeof canvasEl.captureStream !== 'function') {
+    alert('Canvas video capture is not available in this browser.');
+    return;
+  }
+
+  let stream = canvasEl.captureStream(60);
+  let mime   = _pickVideoMime();
+  _recChunks = [];
+
+  try {
+    _mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  } catch (err) {
+    alert('Could not start recording: ' + err.message);
+    _mediaRecorder = null;
+    return;
+  }
+
+  _mediaRecorder.ondataavailable = function(e) {
+    if (e.data && e.data.size > 0) _recChunks.push(e.data);
+  };
+  _mediaRecorder.onstop = function() {
+    let blob = new Blob(_recChunks, { type: _mediaRecorder.mimeType || 'video/webm' });
+    _recChunks = [];
+    _downloadBlob(blob, 'lissajous_' + makeTimestamp() + '.webm');
+    _setRecordBtnState(false);
+    _mediaRecorder = null;
+  };
+
+  _mediaRecorder.start();
+  _setRecordBtnState(true);
+}
+
+function stopVideoRecording() {
+  if (isRecording()) _mediaRecorder.stop();
+}
+
+function _setRecordBtnState(recording) {
+  let btn = document.getElementById('recordVideoBtn');
+  if (!btn) return;
+  btn.classList.toggle('recording', recording);
+  btn.innerHTML = recording ? '&#9632; Stop' : '&#9679; Video';
+}
+
 function saveSVG() {
   let w = width, h = height;
 
@@ -1546,6 +1619,7 @@ function setup() {
   // Save / load
   document.getElementById("savePngBtn").addEventListener("click", savePNG);
   document.getElementById("saveSvgBtn").addEventListener("click", saveSVG);
+  document.getElementById("recordVideoBtn").addEventListener("click", toggleVideoRecording);
   document.getElementById("saveSettingsBtn").addEventListener("click", saveSettings);
   document.getElementById("loadSettingsBtn").addEventListener("click", loadSettings);
 
