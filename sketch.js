@@ -432,7 +432,9 @@ function applyVignette() {
 
 function pushHistory() {
   undoHistory = undoHistory.slice(0, historyIndex + 1);
-  undoHistory.push(captureState());
+  let snap = captureState();
+  snap.presetName = _activePresetName; // history-only, so undo can re-bold the preset chip
+  undoHistory.push(snap);
   if (undoHistory.length > MAX_HISTORY) undoHistory.shift();
   historyIndex = undoHistory.length - 1;
 }
@@ -607,11 +609,67 @@ function restoreState(snap) {
 }
 
 function performUndo() {
-  if (historyIndex > 0) { historyIndex--; restoreState(undoHistory[historyIndex]); }
+  if (historyIndex > 0) { historyIndex--; restoreState(undoHistory[historyIndex]); markActivePreset(undoHistory[historyIndex].presetName); }
 }
 
 function performRedo() {
-  if (historyIndex < undoHistory.length - 1) { historyIndex++; restoreState(undoHistory[historyIndex]); }
+  if (historyIndex < undoHistory.length - 1) { historyIndex++; restoreState(undoHistory[historyIndex]); markActivePreset(undoHistory[historyIndex].presetName); }
+}
+
+// =============================================================================
+// PRESETS
+// =============================================================================
+
+// LISSA_PRESETS comes from presets/presets.js, generated from presets/*.json.
+// (Separate from the older built-in PRESETS / applyPreset(name) above.)
+// Older saves predate some fields (vignette, textMode, newer LFOs…), so each
+// preset is layered over the default state — otherwise missing fields would
+// carry over from whatever look was showing before.
+let _defaultState = null;
+
+function hasLissaPresets() {
+  return typeof LISSA_PRESETS !== 'undefined' && LISSA_PRESETS.length > 0;
+}
+
+function loadLissaPreset(preset) {
+  let s    = preset.state;
+  let snap = Object.assign({}, _defaultState, s);
+  snap.params = Object.assign({}, _defaultState.params, s.params);
+  snap.lfos   = JSON.parse(JSON.stringify(_defaultState.lfos));
+  for (let k in s.lfos) if (snap.lfos[k]) Object.assign(snap.lfos[k], s.lfos[k]);
+  restoreState(snap);
+  _presetBaselines[preset.name] = _lookKey();
+  markActivePreset(preset.name);
+}
+
+// Baseline look per preset (as loaded), used to tell whether the current look
+// is still the untouched preset. Keyed by name so undo/redo back onto an
+// edited state of a preset still compares against that preset's original.
+let _presetBaselines = {};
+
+// Serialized look, minus the LFO phases that advance every frame.
+function _lookKey() {
+  let s = captureState();
+  for (let k in s.lfos) delete s.lfos[k].phase;
+  return JSON.stringify(s);
+}
+
+// "<preset>" or "<preset> edited"; null when no preset is active.
+function currentPresetLabel() {
+  if (!_activePresetName) return null;
+  let edited = _presetBaselines[_activePresetName] !== _lookKey();
+  return _activePresetName + (edited ? ' edited' : '');
+}
+
+// Bold the chip of the last-loaded preset. Each history entry remembers it,
+// so undo/redo moves the bold along with the look.
+let _activePresetName = null;
+
+function markActivePreset(name) {
+  _activePresetName = name || null;
+  document.querySelectorAll('#presetList .chip').forEach(function(chip) {
+    chip.classList.toggle('active', chip.dataset.name === name);
+  });
 }
 
 // =============================================================================
@@ -1312,11 +1370,70 @@ function savePNG() {
   saveCanvas('lissajous_' + makeTimestamp(), 'png');
 }
 
-// Canvas video capture via MediaRecorder. Records the raw p5 canvas pixels;
-// CSS-applied effects (brightness/contrast/colorFilter overlay) are not baked
-// in since they live on #canvas-container, not the canvas itself.
+// Canvas video capture via MediaRecorder. The CSS-applied effects (brightness/
+// contrast filter on #canvas-container, #vignette and #color-filter overlays)
+// aren't part of the p5 canvas, so each frame is re-composited onto an offscreen
+// canvas in the same stacking order as the DOM, and that canvas is recorded.
 let _mediaRecorder = null;
 let _recChunks     = [];
+let _recCanvas     = null;
+let _recCtx        = null;
+let _recRafId      = null;
+
+// Mirrors the DOM stack: page bg → filtered canvas → vignette → color filter.
+function _compositeRecordFrame(srcCanvas) {
+  let w = _recCanvas.width, h = _recCanvas.height;
+  let ctx = _recCtx;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  // Page background shows through when transparentBg is on (unfiltered, like the DOM)
+  ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#f4f4f4';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.filter = `brightness(${brightness.toFixed(3)}) contrast(${contrastLevel.toFixed(3)})`;
+  ctx.drawImage(srcCanvas, 0, 0, w, h);
+  ctx.filter = 'none';
+
+  // CSS radial-gradient(ellipse at center) defaults to farthest-corner sizing:
+  // an ellipse with the box's aspect ratio passing through the corners.
+  if (vignette.enabled) {
+    let { r, g, b } = vignette.color;
+    let rx = (w / 2) * Math.SQRT2, ry = (h / 2) * Math.SQRT2;
+    let inner = Math.max(0, Math.min(1, 1 - vignette.softness));
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(1, ry / rx);
+    let grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    grad.addColorStop(inner, `rgba(${r},${g},${b},0)`);
+    grad.addColorStop(1,     `rgba(${r},${g},${b},${vignette.amount})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(-rx, -rx, rx * 2, rx * 2);
+    ctx.restore();
+  }
+
+  // Canvas composite ops share names with CSS mix-blend-mode, except 'normal'
+  if (colorFilter.enabled) {
+    let { r, g, b } = colorFilter.color;
+    ctx.globalCompositeOperation =
+      colorFilter.blendMode === 'normal' ? 'source-over' : colorFilter.blendMode;
+    ctx.fillStyle = `rgba(${r},${g},${b},${colorFilter.opacity})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+function _recordLoop(srcCanvas) {
+  _compositeRecordFrame(srcCanvas);
+  _recRafId = requestAnimationFrame(function() { _recordLoop(srcCanvas); });
+}
+
+function _stopRecordLoop() {
+  if (_recRafId != null) cancelAnimationFrame(_recRafId);
+  _recRafId = null;
+  _recCanvas = null;
+  _recCtx = null;
+}
 
 function _pickVideoMime() {
   let candidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
@@ -1347,7 +1464,14 @@ function startVideoRecording() {
     return;
   }
 
-  let stream = canvasEl.captureStream(60);
+  // Fixed at the source canvas's backing size for the whole take
+  _recCanvas = document.createElement('canvas');
+  _recCanvas.width  = canvasEl.width;
+  _recCanvas.height = canvasEl.height;
+  _recCtx = _recCanvas.getContext('2d');
+  _compositeRecordFrame(canvasEl); // first frame ready before the stream starts
+
+  let stream = _recCanvas.captureStream(60);
   let mime   = _pickVideoMime();
   _recChunks = [];
 
@@ -1356,22 +1480,33 @@ function startVideoRecording() {
   } catch (err) {
     alert('Could not start recording: ' + err.message);
     _mediaRecorder = null;
+    _stopRecordLoop();
     return;
   }
+  _recordLoop(canvasEl);
 
   _mediaRecorder.ondataavailable = function(e) {
     if (e.data && e.data.size > 0) _recChunks.push(e.data);
   };
   _mediaRecorder.onstop = function() {
+    _stopRecordLoop();
     let blob = new Blob(_recChunks, { type: _mediaRecorder.mimeType || 'video/webm' });
     _recChunks = [];
-    _downloadBlob(blob, 'lissajous_' + makeTimestamp() + '.webm');
+    _downloadBlob(blob, _videoFileBase() + '.webm');
     _setRecordBtnState(false);
     _mediaRecorder = null;
   };
 
   _mediaRecorder.start();
   _setRecordBtnState(true);
+}
+
+// Named after the preset (judged when the take ends, so edits made mid-take
+// count); falls back to the timestamped name when no preset is active.
+function _videoFileBase() {
+  let label = currentPresetLabel();
+  if (!label) return 'lissajous_' + makeTimestamp();
+  return label.replace(/[\/\\:*?"<>|]/g, '-').trim();
 }
 
 function stopVideoRecording() {
@@ -1461,6 +1596,7 @@ function loadSettings() {
       try {
         let snap = JSON.parse(ev.target.result);
         restoreState(snap);
+        markActivePreset(null); // a loaded file isn't any preset
         pushHistory();
       } catch(err) {
         console.error('Failed to load settings:', err);
@@ -1870,11 +2006,6 @@ function setup() {
     });
   });
 
-  // Randomize
-  document.getElementById('randomizeBtn').addEventListener('click', function() {
-    randomizeColors();
-    randomizeParams();
-  });
   document.getElementById('outputWindowBtn').addEventListener('click', openOutputWindow);
 
   // Extend LFO rate sliders to the slow end
@@ -2082,6 +2213,29 @@ function setup() {
     });
   });
 
+  // ── NEW UI: presets list ──────────────────────────────────
+  // One chip per file in presets/ (via presets.js); clicking loads that look
+  // as a single undo step.
+  (function() {
+    var list = document.getElementById('presetList');
+    if (!list) return;
+    if (!hasLissaPresets()) {
+      list.innerHTML = '<span class="preset-empty">No presets found — see presets/</span>';
+      return;
+    }
+    LISSA_PRESETS.forEach(function(preset) {
+      var chip = document.createElement('button');
+      chip.className = 'chip';
+      chip.dataset.name = preset.name;
+      chip.textContent = preset.name;
+      chip.addEventListener('click', function() {
+        loadLissaPreset(preset);
+        pushHistory();
+      });
+      list.appendChild(chip);
+    });
+  })();
+
   // ── NEW UI: color swatch live sync ───────────────────────
   [['lineColor','lineColorSwatch'],['bgColor','bgColorSwatch'],['filterColor','filterColorSwatch'],['vignetteColor','vignetteColorSwatch']].forEach(function(pair) {
     var inp = document.getElementById(pair[0]);
@@ -2091,6 +2245,7 @@ function setup() {
   });
 
   // ── NEW UI: welcome screen ────────────────────────────────
+  _defaultState = captureState();
   (function() {
     var ws = document.getElementById('welcome-screen');
     if (!ws) return;
@@ -2100,18 +2255,6 @@ function setup() {
     var _bgSwatch = document.getElementById('bgColorSwatch');
     if (_bgSwatch) _bgSwatch.style.background = '#ededed';
 
-    // 10 shape randomizations: fast start, slow end (quadratic ease-out spacing)
-    // Colors stay white throughout; only shape/params change
-    var count = 10;
-    var duration = 0; // ms; last shape settles 300ms before fade begins
-    for (var i = 0; i < count; i++) {
-      (function(idx) {
-        var t = duration * Math.pow(idx / (count - 1), 2);
-        setTimeout(function() {
-          randomizeParams();
-        }, t);
-      })(i);
-    }
     var wt = document.getElementById('welcome-text');
 
     // Dismiss the welcome screen: fade out, then remove. Runs at most once,
@@ -2192,9 +2335,10 @@ function setup() {
     }
   })();
 
-  randomizeColors();
-  randomizeParams();
-  pushHistory(); // capture initial randomized state
+  // Start on a random preset from presets/ (random look if presets.js is missing)
+  if (hasLissaPresets()) loadLissaPreset(random(LISSA_PRESETS));
+  else { randomizeColors(); randomizeParams(); }
+  pushHistory(); // capture initial state
 }
 
 // =============================================================================

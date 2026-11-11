@@ -1,0 +1,142 @@
+{
+  "params": {
+    "freqX": 1,
+    "freqY": 5,
+    "modFreqX": 5,
+    "modFreqY": 4.41,
+    "phase": 0,
+    "speed": 0.003,
+    "ampX": 0.9,
+    "ampY": 0.9,
+    "stepSize": 0.001,
+    "strokeWeight": 0.5,
+    "trail": 7,
+    "pointCount": 780,
+    "connectionRadius": 298,
+    "connectionRamp": 1.6
+  },
+  "bgColor": {
+    "r": 36,
+    "g": 36,
+    "b": 36
+  },
+  "lineColor": {
+    "r": 167,
+    "g": 188,
+    "b": 251
+  },
+  "drawMode": "line",
+  "meshAnimating": true,
+  "meshAnimSpeed": 0.005,
+  "legibilityAmount": 0,
+  "legibilityMode": "hatch",
+  "legSettings": {
+    "scale": 1,
+    "angle": 0,
+    "contrast": 1,
+    "invert": false,
+    "wobble": 0.5,
+    "crosshatch": false,
+    "edgeOnly": false
+  },
+  "imageMode": "brightness-param",
+  "imageStrength": 1,
+  "lfos": {
+    "freqX": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "freqY": {
+      "enabled": false,
+      "rate": 0.045,
+      "depth": 0.05,
+      "phase": 0
+    },
+    "modFreqX": {
+      "enabled": false,
+      "rate": 0.025,
+      "depth": 0.14,
+      "phase": 0
+    },
+    "modFreqY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "phase": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "speed": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "ampX": {
+      "enabled": false,
+      "rate": 0.155,
+      "depth": 0.04,
+      "phase": 0
+    },
+    "ampY": {
+      "enabled": false,
+      "rate": 0.136,
+      "depth": 0.06,
+      "phase": 0
+    },
+    "stepSize": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "strokeWeight": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "trail": {
+      "enabled": true,
+      "rate": 0.076,
+      "depth": 0.04,
+      "phase": 22015.313359522595
+    },
+    "bgColor": {
+      "enabled": false,
+      "rate": 0.316,
+      "depth": 0.16,
+      "phase": 0
+    },
+    "lineColor": {
+      "enabled": true,
+      "rate": 0.215,
+      "depth": 0.33,
+      "phase": 27668.449868043153
+    }
+  },
+  "colorFilter": {
+    "color": {
+      "r": 255,
+      "g": 0,
+      "b": 208
+    },
+    "enabled": false,
+    "opacity": 0.3,
+    "blendMode": "darken"
+  },
+  "glowEnabled": false,
+  "glowSize": 30,
+  "glowIntensity": 1,
+  "imgScale": 1.01,
+  "imgOffsetX": 0,
+  "imgOffsetY": 0,
+  "showImage": false,
+  "transparentBg": false
+}

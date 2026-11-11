@@ -1,0 +1,256 @@
+{
+  "params": {
+    "freqX": 1.73,
+    "freqY": 2.01,
+    "modFreqX": 1,
+    "modFreqY": 1,
+    "phase": 0.76,
+    "speed": 0.001,
+    "ampX": 0.9,
+    "ampY": 0.9,
+    "stepSize": 0.001,
+    "strokeWeight": 0.5,
+    "trail": 134,
+    "pointCount": 320,
+    "connectionRadius": 80,
+    "connectionRamp": 5
+  },
+  "bgColor": {
+    "r": 255,
+    "g": 123,
+    "b": 0
+  },
+  "lineColor": {
+    "r": 197,
+    "g": 187,
+    "b": 247
+  },
+  "drawMode": "line",
+  "curveShape": "lissajous",
+  "showCurve": true,
+  "meshAnimating": false,
+  "meshAnimSpeed": 0.005,
+  "imgDrawMode": 2,
+  "imgCols": 119,
+  "imageStrength": 0.09,
+  "lfos": {
+    "freqX": {
+      "enabled": true,
+      "rate": 0.001445439770745928,
+      "depth": 0.22,
+      "phase": 1.8690437364274155,
+      "audio": false
+    },
+    "freqY": {
+      "enabled": true,
+      "rate": 0.020417379446695295,
+      "depth": 0.09,
+      "phase": 26.663931887169348,
+      "audio": false
+    },
+    "modFreqX": {
+      "enabled": false,
+      "rate": 0.07413102413009177,
+      "depth": 1,
+      "phase": 0,
+      "audio": false
+    },
+    "modFreqY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "phase": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "speed": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": true
+    },
+    "ampX": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": true
+    },
+    "ampY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": true
+    },
+    "stepSize": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "strokeWeight": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": true
+    },
+    "trail": {
+      "enabled": true,
+      "rate": 0.04570881896148749,
+      "depth": 0.18,
+      "phase": 70.12148027025157,
+      "audio": true
+    },
+    "bgColor": {
+      "enabled": false,
+      "rate": 0.05011872336272722,
+      "depth": 0.27,
+      "phase": 0,
+      "audio": false
+    },
+    "lineColor": {
+      "enabled": true,
+      "rate": 0.1778279410038923,
+      "depth": 0.37,
+      "phase": 841.0865693326947,
+      "audio": false
+    },
+    "textSize": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "textBlend": {
+      "enabled": false,
+      "rate": 0.20892961308540392,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "connectionRadius": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "connectionRamp": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "imgScale": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "imgOffsetX": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "imgOffsetY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "imageStrength": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "imgCols": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "imgFactorX": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    },
+    "imgFactorY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0,
+      "audio": false
+    }
+  },
+  "colorFilter": {
+    "color": {
+      "r": 255,
+      "g": 0,
+      "b": 0
+    },
+    "enabled": false,
+    "opacity": 0.3,
+    "blendMode": "normal"
+  },
+  "vignette": {
+    "enabled": true,
+    "amount": 1,
+    "softness": 1,
+    "color": {
+      "r": 0,
+      "g": 0,
+      "b": 0
+    }
+  },
+  "glowEnabled": false,
+  "glowSize": 20,
+  "glowIntensity": 0.8,
+  "imgScale": 0.72,
+  "imgOffsetX": 0,
+  "imgOffsetY": 0,
+  "imgFactorX": 0.52,
+  "imgFactorY": 0.36,
+  "imgBlendMode": "darkest",
+  "saturation": 1,
+  "brightness": 1,
+  "contrastLevel": 3,
+  "showImage": false,
+  "transparentBg": false,
+  "audioIn": {
+    "source": "range",
+    "band": 0,
+    "gain": 0.85,
+    "smoothing": 0,
+    "lowHz": 1483,
+    "highHz": 20000
+  },
+  "textMode": {
+    "text": "barnabas",
+    "font": "Arial Black",
+    "size": 200,
+    "bold": true,
+    "italic": false,
+    "blend": 0
+  }
+}

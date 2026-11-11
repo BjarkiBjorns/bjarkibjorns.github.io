@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 \"/Users/bjarkibjornsson/Desktop/3. YEAR/Bachelor Project/code/_bmad/scripts/resolve_customization.py\" --skill \"/Users/bjarkibjornsson/Desktop/3. YEAR/Bachelor Project/code/.claude/skills/bmad-agent-dev\" --key agent)"
+    ]
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "params": {
+    "freqX": 2,
+    "freqY": 1,
+    "modFreqX": 4,
+    "modFreqY": 8,
+    "phase": 0,
+    "speed": 0.004,
+    "ampX": 0.9,
+    "ampY": 0.9,
+    "stepSize": 0.01,
+    "strokeWeight": 0.5,
+    "trail": 1,
+    "pointCount": 800,
+    "connectionRadius": 100,
+    "connectionRamp": 6
+  },
+  "bgColor": {
+    "r": 255,
+    "g": 255,
+    "b": 255
+  },
+  "lineColor": {
+    "r": 0,
+    "g": 51,
+    "b": 255
+  },
+  "drawMode": "line",
+  "meshAnimating": false,
+  "meshAnimSpeed": 0.005,
+  "legibilityAmount": 0,
+  "legibilityMode": "hatch",
+  "legSettings": {
+    "scale": 1,
+    "angle": 0,
+    "contrast": 1,
+    "invert": false,
+    "wobble": 0.5,
+    "crosshatch": false,
+    "edgeOnly": false
+  },
+  "imageMode": "modulation-wave",
+  "imageStrength": 0,
+  "lfos": {
+    "freqX": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "freqY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "modFreqX": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "modFreqY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "phase": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "speed": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "ampX": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "ampY": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "stepSize": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "strokeWeight": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "trail": {
+      "enabled": true,
+      "rate": 0.026,
+      "depth": 0.08,
+      "phase": 120.36467060240378
+    },
+    "bgColor": {
+      "enabled": false,
+      "rate": 0.5,
+      "depth": 0.5,
+      "phase": 0
+    },
+    "lineColor": {
+      "enabled": true,
+      "rate": 0.301,
+      "depth": 0.13,
+      "phase": 2097.8019193991117
+    }
+  },
+  "colorFilter": {
+    "color": {
+      "r": 0,
+      "g": 8,
+      "b": 255
+    },
+    "enabled": false,
+    "opacity": 1,
+    "blendMode": "screen"
+  },
+  "glowEnabled": true,
+  "glowSize": 9,
+  "glowIntensity": 1,
+  "imgScale": 1,
+  "imgOffsetX": 0,
+  "imgOffsetY": 0,
+  "showImage": false,
+  "transparentBg": true
+}

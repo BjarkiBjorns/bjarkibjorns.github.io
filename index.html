@@ -37,11 +37,9 @@
       <p class="welcome-sub">bjarki björnsson, 2026.</p>
     </div>
 
-    <!-- Control panel — top right, Random + Big 4 always visible -->
+    <!-- Control panel — top right, Big 4 always visible -->
     <div id="panel">
       <div id="panel-fixed">
-
-        <button id="randomizeBtn">Random</button>
 
         <!-- Tempo -->
         <div class="slider-pill" id="tempo-pill">
@@ -142,6 +140,12 @@
 
       <!-- Scrollable section content — one section shown at a time -->
       <div id="drawer-content">
+
+        <!-- ── PRESETS ── (chips built from presets/presets.js in setup) -->
+        <div id="presetsBody" class="drawer-section" style="display:none">
+          <div class="section-header">presets</div>
+          <div class="chip-row" id="presetList"></div>
+        </div><!-- end #presetsBody -->
 
         <!-- ── SHAPE ── -->
         <div id="shapeBody" class="drawer-section" style="display:none">
@@ -877,6 +881,7 @@
     <!-- Bottom navigation bar -->
     <div id="bottom-bar">
       <div id="bottom-nav">
+        <button class="nav-pill" data-section="presetsBody">Presets</button>
         <button class="nav-pill" data-section="shapeBody">Shape</button>
         <button class="nav-pill" data-section="effectsBody">Effects</button>
         <button class="nav-pill" data-section="colorBody">Color</button>
@@ -897,6 +902,7 @@
     <div id="canvas-container"></div>
     <div id="color-filter"></div>
     <div id="vignette"></div>
+    <script src="presets/presets.js"></script>
     <script src="sketch.js"></script>
   </body>
 </html>
